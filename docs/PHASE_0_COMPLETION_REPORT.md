@@ -160,7 +160,7 @@ not a blockchain or immutable ledger).
 
 ## O. Technology Recommendation
 
-[ARCHITECTURE.md](ARCHITECTURE.md) Section 4 recommends, for Phase 1: 
+[ARCHITECTURE.md](ARCHITECTURE.md) Section 4 recommends, for Phase 1:
 TypeScript (strict) across frontend and backend; Node.js with a minimal
 framework (Fastify/Express); React + Vite or Next.js for the dashboard;
 PostgreSQL as the system of record; a typed query builder/lightweight ORM
