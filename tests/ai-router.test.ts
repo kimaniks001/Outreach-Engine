@@ -76,6 +76,7 @@ function fakeCandidate(overrides: Partial<AIModel> & { providerKey?: string }): 
     displayName: "Anthropic",
     status: "AVAILABLE",
     adapterImplemented: true,
+    isMock: false,
     credentialsConfigured: true,
     enabled: true,
   };

@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { db, schema } from "../src/lib/db";
 import { hashPassword } from "../src/lib/auth/password";
 import { ROLES, type Role } from "../src/lib/rbac/roles";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 // Local development seed only. Never run against a shared or production
 // database — see the Phase 1 brief Section 9 and docs/DATA_CLASSIFICATION.md
@@ -64,25 +64,63 @@ interface ModelSeed {
   capabilities: string[];
   approvedTaskTypes: string[];
   structuredOutputSupport: boolean;
+  approved: boolean;
+  status: "APPROVED" | "PENDING_REVIEW" | "DEPRECATED";
+  qualityScore: number | null;
+  costInputPer1kUsd: number | null;
+  costOutputPer1kUsd: number | null;
 }
 
-const PROVIDERS: Array<{ key: string; displayName: string; models: ModelSeed[] }> = [
+// Phase 2 task types this build actually wires up an AI task for — see
+// docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md Section 12/13.
+const PHASE_2_TASK_TYPES = [
+  "OPPORTUNITY_CLASSIFICATION",
+  "MARKET_RESEARCH",
+  "SOURCE_SYNTHESIS",
+  "BRAND_REVIEW",
+  "CREATIVE_IDEATION",
+];
+
+const PROVIDERS: Array<{
+  key: string;
+  displayName: string;
+  enabledByDefault: boolean;
+  isMock: boolean;
+  models: ModelSeed[];
+}> = [
   {
     key: "anthropic",
     displayName: "Anthropic",
+    // Enabled by default: if ANTHROPIC_API_KEY is set locally, this
+    // provider becomes AVAILABLE immediately without an extra manual step
+    // (Phase 2 brief Section 24). With no key, it correctly stays
+    // NOT_CONFIGURED — enabling alone never fabricates connectivity, see
+    // src/lib/ai/status.ts.
+    enabledByDefault: true,
+    isMock: false,
     models: [
       {
-        modelKey: "anthropic-default",
-        displayName: "Anthropic — default model (placeholder)",
+        // Data-driven, not hard-coded doctrine — an Owner can add/replace
+        // model rows without a code change. "-latest" alias avoids pinning
+        // a permanent dated snapshot. See docs/PHASE_2_AI_PROVIDER_INTEGRATION.md.
+        modelKey: "claude-3-5-haiku-latest",
+        displayName: "Claude 3.5 Haiku",
         capabilities: ["text-generation", "structured-output"],
-        approvedTaskTypes: [],
+        approvedTaskTypes: PHASE_2_TASK_TYPES,
         structuredOutputSupport: true,
+        approved: true,
+        status: "APPROVED",
+        qualityScore: 0.82,
+        costInputPer1kUsd: 0.0008,
+        costOutputPer1kUsd: 0.004,
       },
     ],
   },
   {
     key: "openai",
     displayName: "OpenAI",
+    enabledByDefault: false,
+    isMock: false,
     models: [
       {
         modelKey: "openai-default",
@@ -90,12 +128,19 @@ const PROVIDERS: Array<{ key: string; displayName: string; models: ModelSeed[] }
         capabilities: ["text-generation", "structured-output"],
         approvedTaskTypes: [],
         structuredOutputSupport: true,
+        approved: false,
+        status: "PENDING_REVIEW",
+        qualityScore: null,
+        costInputPer1kUsd: null,
+        costOutputPer1kUsd: null,
       },
     ],
   },
   {
     key: "google",
     displayName: "Google",
+    enabledByDefault: false,
+    isMock: false,
     models: [
       {
         modelKey: "google-default",
@@ -103,6 +148,34 @@ const PROVIDERS: Array<{ key: string; displayName: string; models: ModelSeed[] }
         capabilities: ["text-generation"],
         approvedTaskTypes: [],
         structuredOutputSupport: false,
+        approved: false,
+        status: "PENDING_REVIEW",
+        qualityScore: null,
+        costInputPer1kUsd: null,
+        costOutputPer1kUsd: null,
+      },
+    ],
+  },
+  {
+    key: "mock",
+    displayName: "Mock / Test Provider",
+    enabledByDefault: true, // needs no credentials — keeps the app usable with zero setup
+    isMock: true,
+    models: [
+      {
+        modelKey: "mock-structured-v1",
+        displayName: "Mock structured responder",
+        capabilities: ["text-generation", "structured-output"],
+        approvedTaskTypes: PHASE_2_TASK_TYPES,
+        structuredOutputSupport: true,
+        approved: true,
+        status: "APPROVED",
+        // Deliberately low — a real, properly configured Anthropic model
+        // always outranks the mock in src/lib/ai/router.ts's deterministic
+        // quality-score ordering. Mock is the fallback, never preferred.
+        qualityScore: 0.3,
+        costInputPer1kUsd: 0,
+        costOutputPer1kUsd: 0,
       },
     ],
   },
@@ -115,15 +188,16 @@ async function seedProvidersAndModels() {
       .values({
         key: provider.key,
         displayName: provider.displayName,
-        adapterImplemented: true, // stub adapter exists — see src/lib/ai/adapters
+        adapterImplemented: true, // adapter file exists — see src/lib/ai/adapters
         credentialsConfigured: false, // computed live from env at read time; this is just the seed default
-        enabled: false, // Owner must explicitly enable in Admin, per docs/MODEL_CONTROL_PLANE.md
+        enabled: provider.enabledByDefault,
+        isMock: provider.isMock,
         status: "NOT_CONFIGURED",
         classification: "INTERNAL",
       })
       .onConflictDoUpdate({
         target: schema.aiProviders.key,
-        set: { displayName: provider.displayName, adapterImplemented: true },
+        set: { displayName: provider.displayName, adapterImplemented: true, isMock: provider.isMock },
       })
       .returning();
 
@@ -136,17 +210,29 @@ async function seedProvidersAndModels() {
           providerId: row.id,
           modelKey: model.modelKey,
           displayName: model.displayName,
-          enabled: false,
-          approved: false,
-          status: "PENDING_REVIEW",
+          enabled: model.approved, // only enable models that are also approved
+          approved: model.approved,
+          status: model.status,
           capabilities: model.capabilities,
           approvedTaskTypes: model.approvedTaskTypes,
           structuredOutputSupport: model.structuredOutputSupport,
+          qualityScore: model.qualityScore !== null ? String(model.qualityScore) : null,
+          costInputPer1kUsd: model.costInputPer1kUsd !== null ? String(model.costInputPer1kUsd) : null,
+          costOutputPer1kUsd: model.costOutputPer1kUsd !== null ? String(model.costOutputPer1kUsd) : null,
           classification: "INTERNAL",
         })
         .onConflictDoUpdate({
           target: [schema.aiModels.providerId, schema.aiModels.modelKey],
-          set: { displayName: model.displayName },
+          set: {
+            displayName: model.displayName,
+            approved: model.approved,
+            enabled: model.approved,
+            status: model.status,
+            approvedTaskTypes: model.approvedTaskTypes,
+            qualityScore: model.qualityScore !== null ? String(model.qualityScore) : null,
+            costInputPer1kUsd: model.costInputPer1kUsd !== null ? String(model.costInputPer1kUsd) : null,
+            costOutputPer1kUsd: model.costOutputPer1kUsd !== null ? String(model.costOutputPer1kUsd) : null,
+          },
         });
     }
   }
@@ -159,6 +245,37 @@ async function seedSafeMode() {
     .onConflictDoNothing({ target: schema.systemSettings.key });
 }
 
+const DEMO_SIGNAL_TITLE = "Contractors are being paid large deposits before work milestones are completed";
+
+// docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md Section 29 — ONE clearly
+// labeled demo scenario (isDemo: true everywhere), deliberately left with
+// zero source evidence so it demonstrates the honest MANUAL/UNVERIFIED path
+// rather than presenting itself as real, sourced market intelligence. Log
+// in as Owner and walk it through Intelligence → Analyze → Review → Approve
+// → Campaigns → Create Campaign → Brand Guardian → Generate Creative →
+// Approve to see the full Phase 2 flow end to end.
+async function seedDemoScenario(ownerUserId: string) {
+  const existing = await db
+    .select()
+    .from(schema.marketSignals)
+    .where(eq(schema.marketSignals.title, DEMO_SIGNAL_TITLE))
+    .limit(1);
+  if (existing.length > 0) return;
+
+  await db.insert(schema.marketSignals).values({
+    title: DEMO_SIGNAL_TITLE,
+    summary:
+      "Homeowners and small businesses report paying 40-50% deposits to contractors before any milestone is delivered, with no protection if work stalls or is abandoned. This is a DEMO/SAMPLE signal for local walkthroughs, not verified current market intelligence.",
+    signalType: "MANUAL",
+    status: "NEW",
+    tags: ["construction", "milestone-payments", "demo"],
+    notes: "DEMO scenario per docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md Section 29. Intentionally left without source evidence.",
+    classification: "INTERNAL",
+    isDemo: true,
+    createdByUserId: ownerUserId,
+  });
+}
+
 async function main() {
   console.log("Seeding Outreach Engine development data...\n");
 
@@ -168,14 +285,23 @@ async function main() {
   await seedProvidersAndModels();
   await seedSafeMode();
 
+  const [owner] = await db.select().from(schema.users).where(eq(schema.users.email, "owner@dev.local")).limit(1);
+  if (owner) await seedDemoScenario(owner.id);
+
   console.log("Development accounts created (passwords shown once, not stored anywhere):\n");
   for (const cred of credentials) {
     console.log(`  ${cred.role.padEnd(20)} ${cred.email.padEnd(32)} ${cred.password}`);
   }
   console.log(
-    "\nAI providers seeded as NOT_CONFIGURED (no credentials, disabled by default) — see Admin → AI Providers."
+    process.env.ANTHROPIC_API_KEY
+      ? "\nAnthropic: ANTHROPIC_API_KEY detected — provider should show AVAILABLE."
+      : "\nAnthropic: ANTHROPIC_API_KEY not set — provider will show NOT_CONFIGURED (this is expected and the app remains fully usable via the mock provider)."
   );
+  console.log("Mock / Test Provider: always available, needs no credentials — see Admin → AI Providers.");
   console.log("Safe Mode initialized to NORMAL.");
+  console.log(
+    `\nDemo scenario seeded: "${DEMO_SIGNAL_TITLE}" (isDemo=true, unverified) — log in as Owner and open Intelligence → Signals to walk it through.`
+  );
   console.log("\nDone.");
   process.exit(0);
 }

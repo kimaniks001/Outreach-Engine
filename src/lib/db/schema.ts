@@ -79,6 +79,11 @@ export const aiProviders = pgTable(
     adapterImplemented: boolean("adapter_implemented").notNull().default(false),
     credentialsConfigured: boolean("credentials_configured").notNull().default(false),
     enabled: boolean("enabled").notNull().default(false),
+    // Phase 2: a mock/deterministic provider that needs no credentials, so
+    // the app stays usable without live AI access. Never shown as a normal
+    // AVAILABLE connection in the UI — always badged distinctly. See
+    // docs/PHASE_2_AI_PROVIDER_INTEGRATION.md.
+    isMock: boolean("is_mock").notNull().default(false),
     classification: classificationEnum("classification").notNull().default("INTERNAL"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -164,6 +169,318 @@ export const systemSettings = pgTable("system_settings", {
   }),
 });
 
+// ============================================================
+// PHASE 2 — Intelligence + Campaign + Creative
+// ============================================================
+
+// docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md Section 7 (brief Section 7).
+export const signalTypeEnum = pgEnum("signal_type", [
+  "WEB",
+  "NEWS",
+  "SOCIAL",
+  "INDUSTRY",
+  "GOVERNMENT",
+  "COMPETITOR",
+  "CUSTOMER_FEEDBACK",
+  "INTERNAL_OBSERVATION",
+  "MANUAL",
+]);
+
+export const signalStatusEnum = pgEnum("signal_status", ["NEW", "ANALYZED", "ARCHIVED"]);
+
+// docs/SOURCE_PROVENANCE.md Section 3 — exact match, do not add states here.
+export const verificationStatusEnum = pgEnum("verification_status", [
+  "VERIFIED",
+  "NEEDS_REVIEW",
+  "WEAK_EVIDENCE",
+  "REJECTED",
+]);
+
+export const evidenceSourceTypeEnum = pgEnum("evidence_source_type", [
+  "NEWS_ARTICLE",
+  "INDUSTRY_REPORT",
+  "SOCIAL_POST",
+  "DIRECT_INTERVIEW",
+  "INTERNAL_DATA",
+  "GOVERNMENT_PUBLICATION",
+  "MANUAL_OBSERVATION",
+  "OTHER",
+]);
+
+export const marketSignals = pgTable("market_signals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: text("title").notNull(),
+  summary: text("summary").notNull(),
+  signalType: signalTypeEnum("signal_type").notNull(),
+  status: signalStatusEnum("status").notNull().default("NEW"),
+  capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  tags: jsonb("tags").$type<string[]>().notNull().default([]),
+  notes: text("notes"),
+  classification: classificationEnum("classification").notNull().default("CONFIDENTIAL"),
+  // Phase 2 brief Section 29 — demo data must be visibly distinguishable
+  // from live intelligence everywhere it appears (list, detail, downstream
+  // opportunities/campaigns copy this flag forward at creation time).
+  isDemo: boolean("is_demo").notNull().default(false),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// docs/SOURCE_PROVENANCE.md Section 2 — required provenance fields. A
+// signal with zero rows here is MANUAL/UNVERIFIED by construction (no row
+// to claim otherwise) — see src/lib/intelligence/evidence.ts.
+export const sourceEvidence = pgTable("source_evidence", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  marketSignalId: uuid("market_signal_id")
+    .notNull()
+    .references(() => marketSignals.id, { onDelete: "cascade" }),
+  sourceName: text("source_name").notNull(),
+  sourceReference: text("source_reference"),
+  sourceType: evidenceSourceTypeEnum("source_type").notNull(),
+  retrievedAt: timestamp("retrieved_at", { withTimezone: true }).notNull().defaultNow(),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  extractedClaim: text("extracted_claim").notNull(),
+  evidenceSnippet: text("evidence_snippet"),
+  confidence: numeric("confidence", { precision: 3, scale: 2 }).notNull(),
+  verificationStatus: verificationStatusEnum("verification_status")
+    .notNull()
+    .default("NEEDS_REVIEW"),
+  contradictionsNotes: text("contradictions_notes"),
+  classification: classificationEnum("classification").notNull().default("CONFIDENTIAL"),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const opportunityStatusEnum = pgEnum("opportunity_status", [
+  "DRAFT",
+  "NEEDS_REVIEW",
+  "APPROVED",
+  "REJECTED",
+  "ARCHIVED",
+]);
+
+// docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md Section 11 — the ONLY four
+// money-flow concepts this system is authorized to map an opportunity to.
+// See src/lib/opportunity/money-flow.ts. Do not add values here without
+// authoritative SecurePay product doctrine — use NEEDS_DOCTRINE_REVIEW.
+export const moneyFlowMappingEnum = pgEnum("money_flow_mapping", [
+  "ONE_TO_ONE",
+  "MANY_TO_ONE",
+  "ONE_TO_MANY",
+  "MANY_TO_MANY",
+  "NEEDS_DOCTRINE_REVIEW",
+]);
+
+export const urgencyEnum = pgEnum("urgency", ["LOW", "MEDIUM", "HIGH"]);
+
+export const opportunities = pgTable("opportunities", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  marketSignalId: uuid("market_signal_id")
+    .notNull()
+    .references(() => marketSignals.id, { onDelete: "restrict" }),
+  title: text("title").notNull(),
+  problem: text("problem").notNull(),
+  targetAudience: text("target_audience").notNull(),
+  affectedSector: text("affected_sector"),
+  geography: text("geography"),
+  securepayRelevance: text("securepay_relevance").notNull(),
+  moneyFlowMapping: moneyFlowMappingEnum("money_flow_mapping").notNull(),
+  productNote: text("product_note"),
+  evidenceSummary: text("evidence_summary").notNull(),
+  confidence: numeric("confidence", { precision: 3, scale: 2 }).notNull(),
+  opportunityScore: integer("opportunity_score").notNull(),
+  urgency: urgencyEnum("urgency").notNull().default("MEDIUM"),
+  estimatedCommercialPotential: text("estimated_commercial_potential"),
+  recommendedMarketingAngle: text("recommended_marketing_angle"),
+  recommendedCta: text("recommended_cta"),
+  risksCaveats: text("risks_caveats"),
+  status: opportunityStatusEnum("status").notNull().default("DRAFT"),
+  aiUsageRecordId: uuid("ai_usage_record_id").references(() => aiUsageRecords.id, {
+    onDelete: "set null",
+  }),
+  classification: classificationEnum("classification").notNull().default("CONFIDENTIAL"),
+  isDemo: boolean("is_demo").notNull().default(false),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md Section 10 — transparent,
+// explainable scoring. One current breakdown per opportunity (re-scoring
+// overwrites, it does not silently hide the previous explanation — see
+// src/lib/opportunity/scoring.ts).
+export const opportunityScores = pgTable(
+  "opportunity_scores",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    opportunityId: uuid("opportunity_id")
+      .notNull()
+      .references(() => opportunities.id, { onDelete: "cascade" }),
+    problemFit: integer("problem_fit").notNull(),
+    securepayFit: integer("securepay_fit").notNull(),
+    audienceClarity: integer("audience_clarity").notNull(),
+    commercialValue: integer("commercial_value").notNull(),
+    reachability: integer("reachability").notNull(),
+    evidenceStrength: integer("evidence_strength").notNull(),
+    urgencyTiming: integer("urgency_timing").notNull(),
+    totalScore: integer("total_score").notNull(),
+    explanation: jsonb("explanation").$type<Record<string, string>>().notNull().default({}),
+    aiProposed: boolean("ai_proposed").notNull().default(false),
+    scoredByUserId: uuid("scored_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    opportunityIdx: uniqueIndex("opportunity_scores_opportunity_idx").on(table.opportunityId),
+  })
+);
+
+export const campaignStatusEnum = pgEnum("campaign_status", [
+  "IDEA",
+  "DRAFT",
+  "BRAND_REVIEW",
+  "NEEDS_REVISION",
+  "AWAITING_APPROVAL",
+  "APPROVED",
+  "REJECTED",
+  "READY_FOR_DISTRIBUTION",
+]);
+
+export const riskLevelEnum = pgEnum("risk_level", ["LOW", "MEDIUM", "HIGH"]);
+
+export const brandGuardianStatusEnum = pgEnum("brand_guardian_status", [
+  "NOT_REVIEWED",
+  "PASS",
+  "REVISE",
+  "BLOCK",
+]);
+
+export const campaigns = pgTable("campaigns", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  opportunityId: uuid("opportunity_id")
+    .notNull()
+    .references(() => opportunities.id, { onDelete: "restrict" }),
+  name: text("name").notNull(),
+  objective: text("objective").notNull(),
+  targetAudience: text("target_audience").notNull(),
+  positioningAngle: text("positioning_angle").notNull(),
+  coreMessage: text("core_message").notNull(),
+  recommendedChannelTypes: jsonb("recommended_channel_types")
+    .$type<string[]>()
+    .notNull()
+    .default([]),
+  cta: text("cta").notNull(),
+  destinationConcept: text("destination_concept"),
+  creativeBrief: text("creative_brief"),
+  riskLevel: riskLevelEnum("risk_level").notNull().default("HIGH"), // public campaigns are HIGH risk by default — see docs/AI_GOVERNANCE.md Section 4
+  brandGuardianStatus: brandGuardianStatusEnum("brand_guardian_status")
+    .notNull()
+    .default("NOT_REVIEWED"),
+  status: campaignStatusEnum("status").notNull().default("IDEA"),
+  aiUsageRecordId: uuid("ai_usage_record_id").references(() => aiUsageRecords.id, {
+    onDelete: "set null",
+  }),
+  isDemo: boolean("is_demo").notNull().default(false),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md Section 17 — image-first,
+// max 3 per generation action (enforced in src/lib/creative, not here).
+export const creativeVariants = pgTable("creative_variants", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  campaignId: uuid("campaign_id")
+    .notNull()
+    .references(() => campaigns.id, { onDelete: "cascade" }),
+  variantLabel: text("variant_label").notNull(), // e.g. "A"
+  angle: text("angle").notNull(), // e.g. "Problem-led"
+  headline: text("headline").notNull(),
+  body: text("body").notNull(),
+  cta: text("cta").notNull(),
+  imageConcept: text("image_concept").notNull(), // visual direction / creative brief, not a generated image
+  aspectRatioSuggestions: jsonb("aspect_ratio_suggestions")
+    .$type<string[]>()
+    .notNull()
+    .default(["square", "portrait", "landscape"]),
+  carouselConcept: text("carousel_concept"),
+  demoConceptNote: text("demo_concept_note"),
+  rationale: text("rationale").notNull(),
+  brandGuardianStatus: brandGuardianStatusEnum("brand_guardian_status")
+    .notNull()
+    .default("NOT_REVIEWED"),
+  aiUsageRecordId: uuid("ai_usage_record_id").references(() => aiUsageRecords.id, {
+    onDelete: "set null",
+  }),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const brandReviewSubjectEnum = pgEnum("brand_review_subject", [
+  "campaign",
+  "creative_variant",
+]);
+
+// docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md Section 13. subjectId is
+// intentionally polymorphic (campaign or creative_variant) rather than two
+// nullable FK columns — kept simple per the brief's "no over-engineering"
+// instruction; see that document for the trade-off this accepts.
+export const brandReviews = pgTable("brand_reviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  subjectType: brandReviewSubjectEnum("subject_type").notNull(),
+  subjectId: uuid("subject_id").notNull(),
+  result: brandGuardianStatusEnum("result").notNull(),
+  reasons: jsonb("reasons").$type<string[]>().notNull().default([]),
+  offendingStatements: jsonb("offending_statements").$type<string[]>().notNull().default([]),
+  recommendedCorrection: text("recommended_correction"),
+  doctrineReferences: jsonb("doctrine_references").$type<string[]>().notNull().default([]),
+  ruleEngineVersion: text("rule_engine_version").notNull(),
+  aiEnrichmentUsed: boolean("ai_enrichment_used").notNull().default(false),
+  aiUsageRecordId: uuid("ai_usage_record_id").references(() => aiUsageRecords.id, {
+    onDelete: "set null",
+  }),
+  requestedByUserId: uuid("requested_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const approvalSubjectEnum = pgEnum("approval_subject", ["opportunity", "campaign"]);
+export const approvalActionEnum = pgEnum("approval_action", [
+  "APPROVE",
+  "REJECT",
+  "REVISION_REQUESTED",
+]);
+
+// docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md Section 15 — append-only,
+// mirrors the audit log's philosophy but scoped to approval decisions
+// specifically so approval history is easy to query per subject.
+export const approvalEvents = pgTable("approval_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  subjectType: approvalSubjectEnum("subject_type").notNull(),
+  subjectId: uuid("subject_id").notNull(),
+  action: approvalActionEnum("action").notNull(),
+  actorUserId: uuid("actor_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type AiProvider = typeof aiProviders.$inferSelect;
@@ -171,3 +488,11 @@ export type AiModel = typeof aiModels.$inferSelect;
 export type AiUsageRecord = typeof aiUsageRecords.$inferSelect;
 export type AuditEvent = typeof auditEvents.$inferSelect;
 export type SystemSetting = typeof systemSettings.$inferSelect;
+export type MarketSignal = typeof marketSignals.$inferSelect;
+export type SourceEvidence = typeof sourceEvidence.$inferSelect;
+export type Opportunity = typeof opportunities.$inferSelect;
+export type OpportunityScore = typeof opportunityScores.$inferSelect;
+export type Campaign = typeof campaigns.$inferSelect;
+export type CreativeVariant = typeof creativeVariants.$inferSelect;
+export type BrandReview = typeof brandReviews.$inferSelect;
+export type ApprovalEvent = typeof approvalEvents.$inferSelect;

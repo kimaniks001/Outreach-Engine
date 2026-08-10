@@ -23,6 +23,7 @@ function toAIProvider(row: typeof schema.aiProviders.$inferSelect): AIProvider {
     adapterImplemented: row.adapterImplemented,
     credentialsConfigured,
     enabled: row.enabled,
+    isMock: row.isMock,
   };
 }
 
