@@ -30,14 +30,18 @@ $ npm test
       Tests  109 passed (109)
 ```
 
-Re-run twice to confirm determinism (both runs: 11/11 files, 109/109
-tests). `vitest.config.ts` sets `fileParallelism: false` — the two spawned
-`next dev` E2E files (Phase 1's and Phase 2's) previously produced spurious
-404/500s when Vitest ran them as separate worker processes concurrently
-(confirmed as environmental contention, not an application bug, by
-reproducing the same request manually against a single dev server and
-getting a clean 201). Sequential file execution costs a few seconds and
-makes the suite fully deterministic.
+Re-run 5+ times to confirm determinism (11/11 files, 109/109 tests every
+time, including once with the verbose reporter). `vitest.config.ts` sets
+`fileParallelism: false` — the two spawned `next dev` E2E files (Phase 1's
+and Phase 2's) previously produced spurious 404/500s when Vitest ran them
+as separate worker processes concurrently (confirmed as environmental
+contention, not an application bug, by reproducing the same request
+manually against a single dev server and getting a clean 201). Sequential
+file execution costs a few seconds and makes the suite fully deterministic.
+`testTimeout` was also raised from 15s to 30s after one run (under the
+verbose reporter's extra overhead) hit a timeout waiting on a cold-compiled
+Next dev route; 5 subsequent clean runs confirmed this was timeout margin,
+not flakiness.
 
 | File | Covers |
 |---|---|
