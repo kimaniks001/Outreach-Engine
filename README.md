@@ -37,8 +37,8 @@ Full doctrine: [docs/OUTREACH_ENGINE_DOCTRINE.md](docs/OUTREACH_ENGINE_DOCTRINE.
 
 | Phase | Name | Status |
 |---|---|---|
-| 0 | Foundation | **In progress** |
-| 1 | Command Centre + AI Core | Not started |
+| 0 | Foundation | Complete |
+| 1 | Command Centre + AI Core | **In progress** |
 | 2 | Intelligence + Campaign + Creative | Not started |
 | 3 | Targeting + Distribution | Not started |
 | 4 | Audience Memory, Attribution & Conversion | Not started |
@@ -46,29 +46,43 @@ Full doctrine: [docs/OUTREACH_ENGINE_DOCTRINE.md](docs/OUTREACH_ENGINE_DOCTRINE.
 
 Full roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 
-## Current Phase: Phase 0 — Foundation
+## Current Phase: Phase 1 — Command Centre + AI Core
 
-Phase 0 is documentation and architecture only. It establishes the rules
-Phase 1 onward must build against: governance, access control, data
-classification, AI provider/model architecture, source provenance, audit and
-safety controls. See
-[docs/PHASE_0_COMPLETION_REPORT.md](docs/PHASE_0_COMPLETION_REPORT.md) for
+Phase 1 turns the Phase 0 doctrine into a real, running application: a
+login-protected Command Centre with role-based navigation, server-enforced
+RBAC, and the AI Gateway foundation (provider registry, model registry,
+deterministic router) — with no live AI provider calls. See
+[docs/PHASE_1_COMMAND_CENTRE_AND_AI_CORE.md](docs/PHASE_1_COMMAND_CENTRE_AND_AI_CORE.md)
+for what was built, and
+[docs/PHASE_1_COMPLETION_REPORT.md](docs/PHASE_1_COMPLETION_REPORT.md) for
 status and final classification.
+
+## Running Locally
+
+```
+cp .env.example .env.local        # fill in SESSION_SECRET (openssl rand -base64 32)
+docker compose up -d db           # or: docker run ... postgres:16-alpine, see docker-compose.yml
+npm install
+npm run db:migrate
+npm run db:seed                   # prints one-time random dev passwords for all 6 roles
+npm run dev                       # http://localhost:3000
+```
 
 ## What Is NOT Built Yet
 
-Nothing beyond documentation exists yet. Specifically, as of Phase 0:
-
-- No application code, database, or deployed infrastructure.
-- No authentication, dashboard, or RBAC enforcement code.
-- No AI provider integrations (no Anthropic/Claude, OpenAI, Gemini, or any
-  other LLM wired up).
+- No AI provider is actually called — all three provider adapters are
+  non-live stubs (no Anthropic/Claude, OpenAI, or Gemini API calls anywhere
+  in this codebase). See
+  [docs/PHASE_1_COMMAND_CENTRE_AND_AI_CORE.md](docs/PHASE_1_COMMAND_CENTRE_AND_AI_CORE.md)
+  Section 7.
 - No n8n, Clay, HubSpot, Meta, Google Ads, or other external/social
   integrations.
-- No credentials, API keys, or secrets are configured or required.
-- No commercial memory, audience-state engine, journey-recovery engine,
-  paid-media integration, or creative-generation pipeline.
-- No Analytics API.
+- No market intelligence, campaign strategy, creative generation, or Brand
+  Guardian (Phase 2).
+- No audience targeting, paid media, or commercial memory (Phase 3–4).
+- No product-event attribution, Growth Director reasoning, or Analytics API
+  (Phase 4–5).
+- No credentials are committed; none are required to run Phase 1 locally.
 
 ## Documentation Map
 
@@ -86,6 +100,9 @@ Nothing beyond documentation exists yet. Specifically, as of Phase 0:
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture and technology recommendation |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Six-phase build roadmap |
 | [docs/PHASE_0_COMPLETION_REPORT.md](docs/PHASE_0_COMPLETION_REPORT.md) | Phase 0 delivery record |
+| [docs/PHASE_1_COMMAND_CENTRE_AND_AI_CORE.md](docs/PHASE_1_COMMAND_CENTRE_AND_AI_CORE.md) | Phase 1 architecture, stack, and design decisions |
+| [docs/PHASE_1_TEST_AND_VALIDATION_REPORT.md](docs/PHASE_1_TEST_AND_VALIDATION_REPORT.md) | Phase 1 lint/typecheck/test/build/security results |
+| [docs/PHASE_1_COMPLETION_REPORT.md](docs/PHASE_1_COMPLETION_REPORT.md) | Phase 1 delivery record |
 | [docs/adr/](docs/adr/) | Architecture Decision Records |
 
 ## Build Mode

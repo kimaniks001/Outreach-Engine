@@ -42,3 +42,8 @@ Thumbs.db
 .npm
 .yarn/cache
 .yarn/install-state.gz
+
+# Next.js / TypeScript
+next-env.d.ts
+*.tsbuildinfo
+.vercel
