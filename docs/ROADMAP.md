@@ -1,7 +1,7 @@
 # Roadmap
 
-Status: Phase 0 (Foundation) — IN PROGRESS
-Last updated: 2026-08-10
+Status: Phase 1 (Command Centre + AI Core) — IN PROGRESS
+Last updated: 2026-08-11
 
 ## 1. Principle
 
@@ -12,18 +12,24 @@ it does not create a new phase.
 
 ## 2. The Six Phases
 
-### PHASE 0 — Foundation (current)
+### PHASE 0 — Foundation (complete)
 
 Doctrine, governance, RBAC, AI rules, data classification, provenance,
 cost/safety controls, architecture. Documentation and architecture only —
-no application code, no integrations, no credentials.
+no application code, no integrations, no credentials. See
+[PHASE_0_COMPLETION_REPORT.md](PHASE_0_COMPLETION_REPORT.md).
 
-### PHASE 1 — Command Centre + AI Core
+### PHASE 1 — Command Centre + AI Core (current)
 
 Authentication, roles, dashboard, AI Gateway, provider registry/router,
-usage tracking. First phase with real application code and the first AI
-provider integration, gated by [AI_GOVERNANCE.md](AI_GOVERNANCE.md) and
-[MODEL_CONTROL_PLANE.md](MODEL_CONTROL_PLANE.md).
+usage tracking. First phase with real application code and the AI Gateway
+/ provider-adapter *architecture*, gated by
+[AI_GOVERNANCE.md](AI_GOVERNANCE.md) and
+[MODEL_CONTROL_PLANE.md](MODEL_CONTROL_PLANE.md) — no live provider calls
+yet; see
+[PHASE_1_COMMAND_CENTRE_AND_AI_CORE.md](PHASE_1_COMMAND_CENTRE_AND_AI_CORE.md)
+Section 2 for that distinction. See
+[PHASE_1_COMPLETION_REPORT.md](PHASE_1_COMPLETION_REPORT.md) for status.
 
 ### PHASE 2 — Intelligence + Campaign + Creative
 
@@ -55,9 +61,10 @@ automation, optional read-only Analytics API. See
 
 ## 3. Current Phase
 
-**Phase 0 — Foundation** is in progress on branch `begining-phase-0-foundation`.
-Phase 1 has not started. See
-[PHASE_0_COMPLETION_REPORT.md](PHASE_0_COMPLETION_REPORT.md) for status and
+**Phase 0 — Foundation** is complete and merged to `main`. **Phase 1 —
+Command Centre + AI Core** is in progress on branch
+`begining-phase-1-command-centre-ai-core`. Phase 2 has not started. See
+[PHASE_1_COMPLETION_REPORT.md](PHASE_1_COMPLETION_REPORT.md) for status and
 final classification.
 
 ## 4. Explicitly Deferred Integrations

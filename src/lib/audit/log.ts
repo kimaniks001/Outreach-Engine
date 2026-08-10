@@ -1,0 +1,74 @@
+import { desc, eq } from "drizzle-orm";
+import { db, schema } from "@/lib/db";
+
+// Matches docs/AUDIT_AND_CONTROL.md Section 2, extended with ACCESS_DENIED
+// (needed to make server-side RBAC enforcement observable, per
+// docs/ACCESS_CONTROL_MODEL.md Section 5) and the AI-specific event Phase 1
+// introduces (AI_EXECUTION, for docs/AI_GOVERNANCE.md Section 6
+// traceability).
+export const AUDIT_EVENT_TYPES = [
+  "LOGIN_SUCCESS",
+  "LOGIN_FAILURE",
+  "LOGOUT",
+  "ACCESS_DENIED",
+  "ROLE_CHANGED",
+  "PROVIDER_CONFIG_CHANGED",
+  "MODEL_CONFIG_CHANGED",
+  "SAFE_MODE_CHANGED",
+  "AI_EXECUTION",
+] as const;
+export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
+
+export interface RecordAuditEventInput {
+  eventType: AuditEventType;
+  actorUserId?: string | null;
+  actorLabel?: string | null;
+  targetType?: string | null;
+  targetId?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+// Append-only by convention: no update/delete helpers exist for this table.
+// Never pass secret values in `metadata` — see docs/AUDIT_AND_CONTROL.md
+// Section 3 ("do not log secrets").
+export async function recordAuditEvent(input: RecordAuditEventInput): Promise<void> {
+  await db.insert(schema.auditEvents).values({
+    eventType: input.eventType,
+    actorUserId: input.actorUserId ?? null,
+    actorLabel: input.actorLabel ?? null,
+    targetType: input.targetType ?? null,
+    targetId: input.targetId ?? null,
+    metadata: input.metadata ?? {},
+  });
+}
+
+export interface AuditEventRow {
+  id: string;
+  eventType: string;
+  actorLabel: string | null;
+  actorEmail: string | null;
+  targetType: string | null;
+  targetId: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: Date;
+}
+
+export async function listRecentAuditEvents(limit = 100): Promise<AuditEventRow[]> {
+  const rows = await db
+    .select({
+      id: schema.auditEvents.id,
+      eventType: schema.auditEvents.eventType,
+      actorLabel: schema.auditEvents.actorLabel,
+      actorEmail: schema.users.email,
+      targetType: schema.auditEvents.targetType,
+      targetId: schema.auditEvents.targetId,
+      metadata: schema.auditEvents.metadata,
+      createdAt: schema.auditEvents.createdAt,
+    })
+    .from(schema.auditEvents)
+    .leftJoin(schema.users, eq(schema.auditEvents.actorUserId, schema.users.id))
+    .orderBy(desc(schema.auditEvents.createdAt))
+    .limit(limit);
+
+  return rows;
+}
