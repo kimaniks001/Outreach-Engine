@@ -91,6 +91,13 @@ function buildChannelRecommendationMockResponse(): string {
   });
 }
 
+function buildImpactAnalysisMockResponse(): string {
+  return JSON.stringify({
+    narrative:
+      "[MOCK] No AI enrichment available — relying entirely on the deterministic next-best-action rule engine.",
+  });
+}
+
 function buildCreativeMockResponse(prompt: string): string {
   const name = extractLine(prompt, "CAMPAIGN_NAME") || "this campaign";
   const cta = extractLine(prompt, "CTA") || "Learn more";
@@ -149,6 +156,9 @@ export const mockAdapter: ProviderAdapter = {
         break;
       case "CHANNEL_RECOMMENDATION":
         text = buildChannelRecommendationMockResponse();
+        break;
+      case "IMPACT_ANALYSIS":
+        text = buildImpactAnalysisMockResponse();
         break;
       default:
         text = buildOpportunityMockResponse(input.prompt);

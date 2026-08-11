@@ -11,11 +11,20 @@ import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth/session";
 const PUBLIC_PAGE_PATHS = ["/login"];
 const PUBLIC_API_PATHS = ["/api/auth/login", "/api/auth/logout"];
 
+// The product-event ingestion boundary (Phase 4 brief Section 14) accepts
+// EITHER an authenticated Owner session OR a shared-secret header for a
+// real server-to-server SecurePay integration, which by definition has no
+// browser session cookie. It must reach the route handler even with no
+// session cookie so src/lib/product-events/auth.ts can perform that real
+// check — this is NOT a broader public-API exemption: the route itself
+// still rejects any request lacking either credential with 403.
+const SYSTEM_API_PATHS = ["/api/product-events"];
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isApiRoute = pathname.startsWith("/api/");
 
-  if (PUBLIC_API_PATHS.some((p) => pathname === p)) {
+  if (PUBLIC_API_PATHS.some((p) => pathname === p) || SYSTEM_API_PATHS.some((p) => pathname === p)) {
     return NextResponse.next();
   }
 

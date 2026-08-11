@@ -40,33 +40,44 @@ Full doctrine: [docs/OUTREACH_ENGINE_DOCTRINE.md](docs/OUTREACH_ENGINE_DOCTRINE.
 | 0 | Foundation | Complete |
 | 1 | Command Centre + AI Core | Complete |
 | 2 | Intelligence + Campaign + Creative | Complete |
-| 3 | Targeting + Distribution | **In progress** |
-| 4 | Audience Memory, Attribution & Conversion | Not started |
+| 3 | Targeting + Distribution | Complete |
+| 4 | Audience Memory, Attribution & Conversion | **In progress** |
 | 5 | Impact + Growth Director + Scale | Not started |
 
 Full roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 
-## Current Phase: Phase 3 — Targeting + Distribution
+## Current Phase: Phase 4 — Audience Memory, Attribution & Conversion
 
-Phase 3 turns an approved campaign into a scored audience, a deterministic
-channel plan, a budget-guarded distribution plan, and a controlled
-(simulated-only) execution — proving APPROVED CAMPAIGN → TARGET AUDIENCE →
-AUDIENCE SCORE → CHANNEL PLAN → BUDGET / APPROVAL → CONTROLLED DISTRIBUTION
-→ EXECUTION RECORD end to end. Distribution execution is real
-architecture, not a mock UI: a provider-agnostic adapter interface
-(ADR-001) with one working implementation — a deterministic **simulated**
-adapter, clearly labeled `SIMULATED / NOT LIVE` everywhere it appears —
-plus boundary-only Google Ads/Meta Ads stubs that never falsely report
-`AVAILABLE`. Safe Mode blocks execution server-side; a centralized budget
-guard makes silent spend increases and launches above cap structurally
-impossible; a Brand Guardian gate blocks unreviewed creative from becoming
-executable. See
-[docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md](docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md)
+Phase 4 turns Outreach Engine from a campaign/distribution system into a
+commercial-memory and conversion system, proving REACH → ENGAGEMENT →
+IDENTITY → PRODUCT BEHAVIOR → ATTRIBUTION → JOURNEY STATE →
+NEXT-BEST-ACTION → CONVERSION / RETENTION / UPSELL end to end. A Unified
+Audience Profile with conservative, deterministic identity resolution
+(exact-identifier matching only — never fuzzy, never destroys prior
+anonymous history); a locked, deterministic lifecycle-state engine
+(`UNKNOWN` → ... → `HIGH_VALUE`, with `DORMANT`/`SUPPRESSED` overrides);
+centralized consent/suppression that overrides next-best-action and
+retargeting everywhere; a secure, idempotent SecurePay product-event
+ingestion boundary with a deterministic simulator (no live SecurePay
+integration required); threshold-based abandoned-journey detection; a
+fully explainable, deterministic Next-Best-Action engine (AI may only add
+narrative text, never change the decision); a four-model multi-touch
+attribution engine with reproducible weights; and a real, non-fabricated
+Impact dashboard (funnel + drop-off diagnostics + conversions by
+campaign/channel). See
+[docs/PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md](docs/PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md)
 for what was built,
-[docs/PHASE_3_PROVIDER_ADAPTERS.md](docs/PHASE_3_PROVIDER_ADAPTERS.md) for
-the adapter architecture, and
-[docs/PHASE_3_COMPLETION_REPORT.md](docs/PHASE_3_COMPLETION_REPORT.md) for
+[docs/PHASE_4_PRODUCT_EVENT_INTEGRATION.md](docs/PHASE_4_PRODUCT_EVENT_INTEGRATION.md)
+for the ingestion boundary,
+[docs/PHASE_4_PRIVACY_CONSENT_RETENTION.md](docs/PHASE_4_PRIVACY_CONSENT_RETENTION.md)
+for the privacy model, and
+[docs/PHASE_4_COMPLETION_REPORT.md](docs/PHASE_4_COMPLETION_REPORT.md) for
 status and final classification.
+
+Phase 3 (previous): audience targeting, budget-guarded distribution
+plans, and controlled (simulated-only) execution. See
+[docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md](docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md)
+and [docs/PHASE_3_COMPLETION_REPORT.md](docs/PHASE_3_COMPLETION_REPORT.md).
 
 ## Running Locally
 
@@ -80,7 +91,8 @@ npm run db:seed                   # prints one-time random dev passwords for all
                                    # seeds one clearly-labeled DEMO market signal, and
                                    # (once that demo campaign is walked to
                                    # READY_FOR_DISTRIBUTION) an approved demo audience +
-                                   # a running SIMULATED distribution plan
+                                   # a running SIMULATED distribution plan, then a full
+                                   # Phase 4 construction demo journey (see below)
 npm run dev                       # http://localhost:3000
 ```
 
@@ -99,13 +111,17 @@ npm run dev                       # http://localhost:3000
   that never falsely report `AVAILABLE`. See
   [docs/PHASE_3_PROVIDER_ADAPTERS.md](docs/PHASE_3_PROVIDER_ADAPTERS.md).
 - No production email/WhatsApp/partner-platform sending — those channels
-  are plannable and simulate-launchable, not live-sendable, in Phase 3.
-- No commercial memory, unified audience profiles, attribution, retargeting,
-  or journey recovery (Phase 4).
-- No product-event attribution, Growth Director reasoning, or Analytics API
-  (Phase 4–5).
-- No credentials are committed; none are required to run Phase 1-3
-  locally.
+  are plannable and simulate-launchable, not live-sendable, in Phase 3-4.
+- No autonomous outreach: next-best-action and retargeting eligibility are
+  decisions, never automatic sends or automatic distribution-plan launches
+  (Phase 4).
+- No Growth Director reasoning, autonomous budget/campaign optimization,
+  model benchmarking, or public/read-only Analytics API yet (Phase 5).
+- No CRM replacement, HubSpot/Clay/n8n integration, or data warehouse.
+- No credentials are committed; none are required to run Phase 1-4
+  locally — see
+  [docs/PHASE_4_PRODUCT_EVENT_INTEGRATION.md](docs/PHASE_4_PRODUCT_EVENT_INTEGRATION.md)
+  for the optional (unset-by-default) product-event ingestion secret.
 
 ## Documentation Map
 
@@ -134,6 +150,11 @@ npm run dev                       # http://localhost:3000
 | [docs/PHASE_3_PROVIDER_ADAPTERS.md](docs/PHASE_3_PROVIDER_ADAPTERS.md) | Distribution adapter architecture, simulated adapter, Google/Meta readiness |
 | [docs/PHASE_3_TEST_AND_VALIDATION_REPORT.md](docs/PHASE_3_TEST_AND_VALIDATION_REPORT.md) | Phase 3 lint/typecheck/test/build/security results |
 | [docs/PHASE_3_COMPLETION_REPORT.md](docs/PHASE_3_COMPLETION_REPORT.md) | Phase 3 delivery record |
+| [docs/PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md](docs/PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md) | Phase 4 architecture and design decisions |
+| [docs/PHASE_4_PRODUCT_EVENT_INTEGRATION.md](docs/PHASE_4_PRODUCT_EVENT_INTEGRATION.md) | SecurePay product-event ingestion boundary, idempotency, simulator |
+| [docs/PHASE_4_PRIVACY_CONSENT_RETENTION.md](docs/PHASE_4_PRIVACY_CONSENT_RETENTION.md) | Data minimization, consent/suppression, retention model |
+| [docs/PHASE_4_TEST_AND_VALIDATION_REPORT.md](docs/PHASE_4_TEST_AND_VALIDATION_REPORT.md) | Phase 4 lint/typecheck/test/build/security results |
+| [docs/PHASE_4_COMPLETION_REPORT.md](docs/PHASE_4_COMPLETION_REPORT.md) | Phase 4 delivery record |
 | [docs/adr/](docs/adr/) | Architecture Decision Records |
 
 ## Build Mode

@@ -17,6 +17,10 @@ import {
 } from "../src/lib/distribution/plans";
 import { proposeBudget, approveBudget } from "../src/lib/distribution/budget-guard";
 import { DistributionGateway } from "../src/lib/distribution/gateway";
+import { resolveProfile } from "../src/lib/commercial-memory/identity";
+import { recordTouchpoint } from "../src/lib/commercial-memory/touchpoints";
+import { getCurrentNextBestAction } from "../src/lib/next-best-action/engine";
+import { simulateProductEvent, simulateElapsedTime } from "../src/lib/product-events/simulator";
 
 // Local development seed only. Never run against a shared or production
 // database — see the Phase 1 brief Section 9 and docs/DATA_CLASSIFICATION.md
@@ -95,6 +99,7 @@ const PHASE_2_TASK_TYPES = [
   "CREATIVE_IDEATION",
   "AUDIENCE_CLASSIFICATION",
   "CHANNEL_RECOMMENDATION",
+  "IMPACT_ANALYSIS",
 ];
 
 const PROVIDERS: Array<{
@@ -408,6 +413,150 @@ async function seedPhase3DemoScenario(ownerUserId: string) {
   }
 }
 
+const DEMO_LEAD_CLICK_REF = "demo-construction-lead-001";
+
+// docs/PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md Section 32 — the
+// exact numbered construction demo journey, continuing the Phase 2/3
+// construction demo campaign. Every step calls the real
+// commercial-memory/product-event/journey/attribution/next-best-action
+// architecture (identity resolution, touchpoint recording, the
+// deterministic product-event simulator) — nothing here is a raw insert.
+// isDemo: true and source "demo_seed"/"simulator" everywhere, so this is
+// never confusable with real activity. Idempotent: skipped if the demo
+// profile already exists.
+async function seedPhase4DemoScenario(ownerUserId: string) {
+  const [demoCampaign] = await db
+    .select()
+    .from(schema.campaigns)
+    .where(eq(schema.campaigns.isDemo, true))
+    .orderBy(desc(schema.campaigns.createdAt))
+    .limit(1);
+
+  if (!demoCampaign) {
+    console.log("\nPhase 4 demo scenario not seeded yet: no demo campaign found — walk the Phase 2 demo first.");
+    return;
+  }
+
+  const existingIdentifier = await db
+    .select({ id: schema.profileIdentifiers.id })
+    .from(schema.profileIdentifiers)
+    .where(eq(schema.profileIdentifiers.identifierValue, DEMO_LEAD_CLICK_REF))
+    .limit(1);
+  if (existingIdentifier.length > 0) return;
+
+  // 1. Person sees construction campaign; 2. visits landing/demo.
+  const profile = await resolveProfile({
+    identifiers: { campaignClickRef: DEMO_LEAD_CLICK_REF },
+    source: "demo_seed",
+    isDemo: true,
+  });
+
+  // A known reachable channel is required before any outreach-shaped
+  // next-best-action is eligible (data minimization — see
+  // src/lib/next-best-action/engine.ts's guardedDecision). This lead came
+  // through Google Search, so that is its one known eligible channel.
+  await db
+    .update(schema.audienceProfiles)
+    .set({ eligibleChannels: ["GOOGLE_SEARCH"] })
+    .where(eq(schema.audienceProfiles.id, profile.id));
+
+  await recordTouchpoint({
+    profileId: profile.id,
+    campaignId: demoCampaign.id,
+    channel: "GOOGLE_SEARCH",
+    type: "AD_IMPRESSION",
+    sourceSystem: "demo_seed",
+    isDemo: true,
+  });
+  await recordTouchpoint({
+    profileId: profile.id,
+    campaignId: demoCampaign.id,
+    channel: "GOOGLE_SEARCH",
+    type: "LANDING_PAGE_VIEW",
+    sourceSystem: "demo_seed",
+    isDemo: true,
+  });
+
+  // 3. Creates KSNumber — SIMULATED product event (no live SecurePay call).
+  // Carries the new KSNumber reference so identity resolution upgrades the
+  // profile from ANONYMOUS to KSNUMBER (src/lib/commercial-memory/identity.ts).
+  await simulateProductEvent({
+    productEventType: "KSNUMBER_CREATED",
+    profileRef: { campaignClickRef: DEMO_LEAD_CLICK_REF, ksNumber: "KS-DEMO-0001" },
+    campaignId: demoCampaign.id,
+    metadata: { demo: true },
+  });
+
+  // 4. Starts SecureLink (draft).
+  await simulateProductEvent({
+    productEventType: "SECURELINK_DRAFT_STARTED",
+    profileRef: { campaignClickRef: DEMO_LEAD_CLICK_REF },
+    campaignId: demoCampaign.id,
+    metadata: { draftRef: "demo-securelink-draft-1" },
+  });
+
+  // 5-7. Stops before completion; system detects the incomplete journey
+  // once past its threshold (simulated elapsed time, not a real wait);
+  // Next-Best-Action becomes RESUME_JOURNEY.
+  await simulateElapsedTime(25);
+
+  const canonicalProfile = await resolveProfile({
+    identifiers: { campaignClickRef: DEMO_LEAD_CLICK_REF },
+    source: "demo_seed",
+    isDemo: true,
+  });
+  const nbaAfterAbandonment = await getCurrentNextBestAction(canonicalProfile.id);
+  if (nbaAfterAbandonment?.actionType !== "RESUME_JOURNEY") {
+    console.log(
+      `\nPhase 4 demo: expected RESUME_JOURNEY after simulated abandonment, got ${nbaAfterAbandonment?.actionType ?? "none"}.`
+    );
+  }
+
+  // 8. SecureLink eventually created.
+  await simulateProductEvent({
+    productEventType: "SECURELINK_CREATED",
+    profileRef: { campaignClickRef: DEMO_LEAD_CLICK_REF },
+    campaignId: demoCampaign.id,
+  });
+
+  // 9. Agreement completed.
+  await simulateProductEvent({
+    productEventType: "AGREEMENT_COMPLETED",
+    profileRef: { campaignClickRef: DEMO_LEAD_CLICK_REF },
+    campaignId: demoCampaign.id,
+  });
+
+  // 10. Lifecycle moves FIRST_USE (verified, not asserted, by reading the
+  // profile back after the AGREEMENT_COMPLETED event above).
+  const afterFirstUse = await db
+    .select({ lifecycleState: schema.audienceProfiles.lifecycleState })
+    .from(schema.audienceProfiles)
+    .where(eq(schema.audienceProfiles.id, canonicalProfile.id))
+    .limit(1);
+  if (afterFirstUse[0]?.lifecycleState !== "FIRST_USE") {
+    console.log(`\nPhase 4 demo: expected FIRST_USE lifecycle, got ${afterFirstUse[0]?.lifecycleState}.`);
+  }
+
+  // 11. Repeat product use later moves lifecycle to ACTIVE.
+  await simulateProductEvent({
+    productEventType: "PRODUCT_REUSED",
+    profileRef: { campaignClickRef: DEMO_LEAD_CLICK_REF },
+    campaignId: demoCampaign.id,
+  });
+
+  const afterRepeatUse = await db
+    .select({ lifecycleState: schema.audienceProfiles.lifecycleState })
+    .from(schema.audienceProfiles)
+    .where(eq(schema.audienceProfiles.id, canonicalProfile.id))
+    .limit(1);
+
+  console.log(
+    `\nPhase 4 demo scenario seeded: profile ${canonicalProfile.id} walked REACHED → ENGAGED → REGISTERED → (abandoned SecureLink draft) → RESUME_JOURNEY → FIRST_USE → ${
+      afterRepeatUse[0]?.lifecycleState ?? "?"
+    }. Log in as Owner and open Audiences → Profiles to see it.`
+  );
+}
+
 async function main() {
   console.log("Seeding Outreach Engine development data...\n");
 
@@ -420,6 +569,7 @@ async function main() {
   const [owner] = await db.select().from(schema.users).where(eq(schema.users.email, "owner@dev.local")).limit(1);
   if (owner) await seedDemoScenario(owner.id);
   if (owner) await seedPhase3DemoScenario(owner.id);
+  if (owner) await seedPhase4DemoScenario(owner.id);
 
   console.log("Development accounts created (passwords shown once, not stored anywhere):\n");
   for (const cred of credentials) {
