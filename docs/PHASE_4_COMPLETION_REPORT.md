@@ -310,7 +310,8 @@ Audience Memory, Attribution + Conversion" (on
 `begining-phase-4-audience-memory-attribution-conversion`, parent
 `bf84759` on `main`).
 
-**Draft PR URL:** see the draft PR opened from this branch into `main`.
+**Draft PR URL:** https://github.com/kimaniks001/Outreach-Engine/pull/5
+(draft, not merged).
 
 **CI State:** no CI is configured on this repository (confirmed via
 absence of `.github/workflows/`) — not applicable, same as Phase 0-3.
