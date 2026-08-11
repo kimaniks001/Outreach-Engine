@@ -14,12 +14,14 @@ export type AIProviderStatus = (typeof AI_PROVIDER_STATUSES)[number];
 
 export interface AIProvider {
   id: string;
-  key: string; // "anthropic" | "openai" | "google" | future
+  key: string; // "anthropic" | "openai" | "google" | "mock" | future
   displayName: string;
   status: AIProviderStatus;
   adapterImplemented: boolean;
   credentialsConfigured: boolean;
   enabled: boolean;
+  // Never presented as a real connection — see src/lib/ai/adapters/mock.ts.
+  isMock: boolean;
 }
 
 export interface AIModel {
@@ -44,22 +46,43 @@ export interface AIExecutionRequest {
   requiredCapability?: string;
   correlationId: string;
   requestedByUserId: string;
-  // Phase 1 never populates a real prompt payload — no agents exist yet.
-  // The field exists so the Gateway's signature doesn't need to change when
-  // Phase 2 adds real callers.
-  payload?: Record<string, unknown>;
+  // Phase 2: the actual structured prompt contract for a real (or mock)
+  // execution. Optional because Phase 1-style probing calls (e.g. the
+  // Admin routing explainer) don't need to execute anything.
+  prompt?: { system?: string; user: string };
+  maxOutputTokens?: number;
 }
 
 export type AIExecutionResult =
   | {
       outcome: "NO_AVAILABLE_MODEL";
       reason: string;
+      usageRecordId: string;
     }
   | {
       outcome: "NOT_IMPLEMENTED";
       reason: string;
       selectedProvider: AIProvider;
       selectedModel: AIModel;
+      usageRecordId: string;
+    }
+  | {
+      outcome: "EXECUTED";
+      selectedProvider: AIProvider;
+      selectedModel: AIModel;
+      rawOutput: string;
+      inputTokens: number | null;
+      outputTokens: number | null;
+      latencyMs: number;
+      estimatedCostUsd: number | null;
+      usageRecordId: string;
+    }
+  | {
+      outcome: "EXECUTION_ERROR";
+      selectedProvider: AIProvider;
+      selectedModel: AIModel;
+      error: string;
+      usageRecordId: string;
     };
 
 export interface AIUsageRecord {
