@@ -356,7 +356,8 @@ Impact + Growth Director + Scale (final planned phase)" (on
 `begining-phase-5-impact-growth-director-scale`, parent `84183c3` on
 `main`).
 
-**Draft PR URL:** see the draft PR opened from this branch into `main`.
+**Draft PR URL:** https://github.com/kimaniks001/Outreach-Engine/pull/6
+(draft, not merged).
 
 **CI State:** no CI is configured on this repository (confirmed via
 absence of `.github/workflows/`) — not applicable, same as Phase 0-4.
