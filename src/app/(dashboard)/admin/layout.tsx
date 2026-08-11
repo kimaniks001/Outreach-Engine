@@ -14,6 +14,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     canViewAdminProviders(user.role) && { href: "/admin/models", label: "AI Models" },
     canViewAdminProviders(user.role) && { href: "/admin/usage", label: "AI Usage" },
     canViewAdminProviders(user.role) && { href: "/admin/routing", label: "Model Routing" },
+    canViewAdminProviders(user.role) && { href: "/admin/cost-models", label: "Cost & Models" },
     canViewAdminAudit(user.role) && { href: "/admin/audit", label: "Audit" },
     canViewSafeMode(user.role) && { href: "/admin/safe-mode", label: "Safe Mode" },
   ].filter((tab): tab is { href: string; label: string } => Boolean(tab));

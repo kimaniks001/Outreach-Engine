@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { z } from "zod";
 import { AIGateway } from "@/lib/ai/gateway";
+import { markSchemaValid } from "@/lib/ai/usage";
 import type { AITaskType } from "@/lib/ai/task-types";
 
 // Shared structured-prompt-contract runner, per the Phase 2 brief Section
@@ -23,6 +24,7 @@ export type StructuredTaskResult<T> =
   | { status: "NO_AVAILABLE_MODEL"; reason: string; usageRecordId: string }
   | { status: "NOT_IMPLEMENTED"; reason: string; usageRecordId: string }
   | { status: "EXECUTION_ERROR"; error: string; usageRecordId: string }
+  | { status: "BUDGET_EXCEEDED"; reason: string; usageRecordId: string }
   | { status: "MALFORMED_OUTPUT"; raw: string; error: string; usageRecordId: string };
 
 export async function runStructuredTask<T>(params: {
@@ -54,6 +56,9 @@ export async function runStructuredTask<T>(params: {
   if (result.outcome === "EXECUTION_ERROR") {
     return { status: "EXECUTION_ERROR", error: result.error, usageRecordId: result.usageRecordId };
   }
+  if (result.outcome === "BUDGET_EXCEEDED") {
+    return { status: "BUDGET_EXCEEDED", reason: result.reason, usageRecordId: result.usageRecordId };
+  }
 
   // EXECUTED — never trust the raw text; parse and validate before anyone
   // downstream sees it as data.
@@ -61,6 +66,7 @@ export async function runStructuredTask<T>(params: {
   try {
     parsed = JSON.parse(extractJson(result.rawOutput));
   } catch {
+    await markSchemaValid(result.usageRecordId, false);
     return {
       status: "MALFORMED_OUTPUT",
       raw: result.rawOutput,
@@ -71,6 +77,7 @@ export async function runStructuredTask<T>(params: {
 
   const validated = params.schema.safeParse(parsed);
   if (!validated.success) {
+    await markSchemaValid(result.usageRecordId, false);
     return {
       status: "MALFORMED_OUTPUT",
       raw: result.rawOutput,
@@ -78,6 +85,8 @@ export async function runStructuredTask<T>(params: {
       usageRecordId: result.usageRecordId,
     };
   }
+
+  await markSchemaValid(result.usageRecordId, true);
 
   return {
     status: "SUCCESS",

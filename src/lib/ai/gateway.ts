@@ -3,6 +3,7 @@ import { recordAuditEvent } from "@/lib/audit/log";
 import { getSafeMode } from "@/lib/safe-mode/state";
 import { routeTask } from "./router";
 import { getAdapter } from "./adapters";
+import { checkBudget } from "./budget";
 import type { AIExecutionRequest, AIExecutionResult } from "./types";
 
 // Single entry/exit point for all AI calls — see docs/MODEL_CONTROL_PLANE.md
@@ -75,6 +76,31 @@ export async function execute(request: AIExecutionRequest): Promise<AIExecutionR
       selectedModel: model,
       usageRecordId,
     };
+  }
+
+  // Phase 5 AI budget guard — circuit-breaker semantics: blocks once
+  // cumulative spend already at/above a hard cap. Never blocks a
+  // deterministic code path; only reachable from an AI Gateway call that
+  // would otherwise have executed.
+  const budgetCheck = await checkBudget({
+    taskType: request.taskType,
+    providerId: provider.id,
+    modelId: model.id,
+    requestedByUserId: request.requestedByUserId,
+  });
+  if (budgetCheck.blocked && budgetCheck.blockedByPolicy) {
+    const budgetReason = `AI budget hard cap exceeded: ${budgetCheck.blockedByPolicy.scope}${
+      budgetCheck.blockedByPolicy.scopeRef ? `(${budgetCheck.blockedByPolicy.scopeRef})` : ""
+    } ${budgetCheck.blockedByPolicy.periodType} spend $${budgetCheck.blockedByPolicy.spend.toFixed(2)} >= cap $${budgetCheck.blockedByPolicy.hardLimitUsd.toFixed(2)}.`;
+    const usageRecordId = await recordUsage(request, { providerId: provider.id, modelId: model.id, reason: budgetReason, success: false });
+    await recordAuditEvent({
+      eventType: "AI_BUDGET_EXCEEDED",
+      actorUserId: request.requestedByUserId,
+      targetType: "ai_task",
+      targetId: request.taskType,
+      metadata: { correlationId: request.correlationId, ...budgetCheck.blockedByPolicy },
+    });
+    return { outcome: "BUDGET_EXCEEDED", selectedProvider: provider, selectedModel: model, reason: budgetReason, usageRecordId };
   }
 
   const startedAt = Date.now();

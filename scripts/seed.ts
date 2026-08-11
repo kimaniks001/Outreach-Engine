@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { db, schema } from "../src/lib/db";
 import { hashPassword } from "../src/lib/auth/password";
 import { ROLES, type Role } from "../src/lib/rbac/roles";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and } from "drizzle-orm";
 import { createAudienceSegment, reviewAudienceSegment } from "../src/lib/audience/segments";
 import { computeTotalScore } from "../src/lib/audience/scoring";
 import {
@@ -21,6 +21,10 @@ import { resolveProfile } from "../src/lib/commercial-memory/identity";
 import { recordTouchpoint } from "../src/lib/commercial-memory/touchpoints";
 import { getCurrentNextBestAction } from "../src/lib/next-best-action/engine";
 import { simulateProductEvent, simulateElapsedTime } from "../src/lib/product-events/simulator";
+import { createExperiment, addVariant, planExperiment, startExperiment } from "../src/lib/experiments/experiments";
+import { evaluateAndPersist } from "../src/lib/experiments/evaluation";
+import { createLearningFromExperiment } from "../src/lib/learning/learnings";
+import { generateAndPersistRecommendations } from "../src/lib/growth-director/engine";
 
 // Local development seed only. Never run against a shared or production
 // database — see the Phase 1 brief Section 9 and docs/DATA_CLASSIFICATION.md
@@ -100,6 +104,7 @@ const PHASE_2_TASK_TYPES = [
   "AUDIENCE_CLASSIFICATION",
   "CHANNEL_RECOMMENDATION",
   "IMPACT_ANALYSIS",
+  "GROWTH_RECOMMENDATION",
 ];
 
 const PROVIDERS: Array<{
@@ -557,6 +562,194 @@ async function seedPhase4DemoScenario(ownerUserId: string) {
   );
 }
 
+const PHASE5_EXPERIMENT_NAME = "Milestone framing vs generic safety framing";
+
+// docs/PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md Section 45 — the exact
+// numbered scenario: two campaign/creative variants with genuinely
+// different outcomes, a weak-activation cohort and a zero-conversion
+// "pause" plan (real funnel drop-off + real low-value-plan evidence), an
+// experiment that records a winner + a learning, and Growth Director
+// recommendations that trace back to all of it. Every step calls the real
+// service layer (createDistributionPlan, resolveProfile, recordTouchpoint,
+// simulateProductEvent, createExperiment/evaluateAndPersist,
+// createLearningFromExperiment, generateAndPersistRecommendations, and the
+// real Phase 3 budget/Brand-Guardian/launch pipeline for the pause-
+// candidate plan) — nothing here is a raw insert.
+async function seedPhase5DemoScenario(ownerUserId: string) {
+  const existingExperiment = await db.select().from(schema.experiments).where(eq(schema.experiments.name, PHASE5_EXPERIMENT_NAME)).limit(1);
+  if (existingExperiment.length > 0) return;
+
+  const [demoCampaign] = await db.select().from(schema.campaigns).where(eq(schema.campaigns.isDemo, true)).orderBy(desc(schema.campaigns.createdAt)).limit(1);
+  if (!demoCampaign) {
+    console.log("\nPhase 5 demo scenario not seeded yet: no demo campaign found — walk the Phase 2 demo first.");
+    return;
+  }
+
+  const [demoSegment] = await db
+    .select()
+    .from(schema.audienceSegments)
+    .where(and(eq(schema.audienceSegments.linkedCampaignId, demoCampaign.id), eq(schema.audienceSegments.status, "APPROVED")))
+    .limit(1);
+  if (!demoSegment) {
+    console.log("\nPhase 5 demo scenario not seeded yet: no APPROVED demo audience segment found — the Phase 3 demo seeds this automatically once the campaign is READY_FOR_DISTRIBUTION.");
+    return;
+  }
+
+  const campaign = demoCampaign;
+  const segment = demoSegment;
+
+  async function demoPlan(channel: (typeof schema.channelTypeEnum.enumValues)[number], objective: string, channelStrategy: string, cta: string) {
+    const plan = await createDistributionPlan(
+      { campaignId: campaign.id, audienceSegmentId: segment.id, objective, channel, channelStrategy, cta },
+      ownerUserId
+    );
+    return plan;
+  }
+
+  const planA = await demoPlan("GOOGLE_SEARCH", "Variant A: milestone-control framing", "Agree on the milestone. Let the money follow.", "See how it works");
+  const planB = await demoPlan("META_FACEBOOK", "Variant B: generic payment-safety framing", "Protect your payments from start to finish.", "Learn more");
+  const planWeak = await demoPlan("WHATSAPP", "Weak-activation channel — registers but rarely activates", "Milestone payment protection, now on WhatsApp.", "Get started");
+  const planPause = await demoPlan("X", "Low-value channel — reach with no measurable conversion", "Milestone payment protection.", "Learn more");
+
+  // Experiment created and started BEFORE the synthetic leads below, so
+  // every conversion's occurredAt falls inside [startDate, now] — the
+  // deterministic evaluation window (src/lib/experiments/evaluation.ts).
+  const experiment = await createExperiment(
+    {
+      name: PHASE5_EXPERIMENT_NAME,
+      hypothesis: "Construction audiences respond better to milestone-control messaging than generic payment-safety messaging.",
+      campaignId: campaign.id,
+      audienceSegmentId: segment.id,
+      channel: "GOOGLE_SEARCH",
+      primaryMetricType: "FIRST_SECURELINK",
+      primaryMetric: "First SecureLink creation rate",
+      expectedOutcome: "Compare first meaningful SecurePay use (SecureLink creation), not clicks — milestone framing (A) is expected to outperform generic safety framing (B).",
+      isDemo: true,
+    },
+    ownerUserId
+  );
+  await addVariant({
+    experimentId: experiment.id,
+    variantLabel: "A",
+    isControl: false,
+    messagingAngle: "Milestone-control framing",
+    cta: "See how it works",
+    distributionPlanId: planA.id,
+    description: "Agree on the milestone. Let the money follow.",
+  });
+  await addVariant({
+    experimentId: experiment.id,
+    variantLabel: "B",
+    isControl: true,
+    messagingAngle: "Generic payment-safety framing",
+    cta: "Learn more",
+    distributionPlanId: planB.id,
+    description: "Protect your payments from start to finish.",
+  });
+  await planExperiment(experiment.id);
+  await startExperiment(experiment.id, ownerUserId);
+
+  async function seedLead(opts: {
+    planId: string;
+    channel: (typeof schema.channelTypeEnum.enumValues)[number];
+    registers: boolean;
+    createsSecureLink: boolean;
+    completesAgreement: boolean;
+    index: number;
+  }) {
+    const email = `phase5-demo-${opts.planId.slice(0, 8)}-${opts.index}@example.com`;
+    const profile = await resolveProfile({ identifiers: { email }, source: "demo_seed", isDemo: true });
+    await db.update(schema.audienceProfiles).set({ eligibleChannels: [opts.channel] }).where(eq(schema.audienceProfiles.id, profile.id));
+
+    await recordTouchpoint({
+      profileId: profile.id,
+      campaignId: campaign.id,
+      distributionPlanId: opts.planId,
+      channel: opts.channel,
+      type: "AD_IMPRESSION",
+      sourceSystem: "demo_seed",
+      isDemo: true,
+    });
+    await recordTouchpoint({
+      profileId: profile.id,
+      campaignId: campaign.id,
+      distributionPlanId: opts.planId,
+      channel: opts.channel,
+      type: "LANDING_PAGE_VIEW",
+      sourceSystem: "demo_seed",
+      isDemo: true,
+    });
+
+    if (opts.registers) {
+      await simulateProductEvent({ productEventType: "KSNUMBER_CREATED", profileRef: { email }, campaignId: campaign.id });
+      if (opts.createsSecureLink) {
+        await simulateProductEvent({ productEventType: "SECURELINK_CREATED", profileRef: { email }, campaignId: campaign.id });
+        if (opts.completesAgreement) {
+          await simulateProductEvent({ productEventType: "AGREEMENT_COMPLETED", profileRef: { email }, campaignId: campaign.id });
+        }
+      }
+    }
+  }
+
+  // Variant A: 25 reached, 22 register, 11 create a SecureLink (5 also
+  // complete an agreement) — a strong, real ~44% activation rate.
+  for (let i = 0; i < 25; i++) {
+    await seedLead({ planId: planA.id, channel: "GOOGLE_SEARCH", registers: i < 22, createsSecureLink: i < 11, completesAgreement: i < 5, index: i });
+  }
+  // Variant B: 25 reached, 22 register, only 4 create a SecureLink — a
+  // real ~16% activation rate, meaningfully worse than A.
+  for (let i = 0; i < 25; i++) {
+    await seedLead({ planId: planB.id, channel: "META_FACEBOOK", registers: i < 22, createsSecureLink: i < 4, completesAgreement: false, index: i });
+  }
+  // Weak-activation cohort: everyone registers, nobody activates — a real
+  // KSNUMBER → PRODUCT_CREATED funnel drop at the campaign level.
+  for (let i = 0; i < 15; i++) {
+    await seedLead({ planId: planWeak.id, channel: "WHATSAPP", registers: true, createsSecureLink: false, completesAgreement: false, index: i });
+  }
+  // Pause-candidate cohort: reach with zero registrations/conversions.
+  for (let i = 0; i < 12; i++) {
+    await seedLead({ planId: planPause.id, channel: "X", registers: false, createsSecureLink: false, completesAgreement: false, index: i });
+  }
+
+  // Real measured spend on the zero-conversion plan, via the same real
+  // Phase 3 pipeline the plan-A0 demo already uses (Brand Guardian →
+  // budget → READY → launch) — not a raw insert. PAUSE_LOW_VALUE_PLAN
+  // (src/lib/growth-director/candidates.ts) only considers RUNNING plans,
+  // since pausing a plan that was never live is meaningless.
+  await updateDistributionPlan(planPause.id, { executionMode: "SIMULATED" });
+  await proposeBudget({ distributionPlanId: planPause.id, plannedBudget: 200, currency: "KES", dailyCap: 50, totalCap: 200 }, ownerUserId);
+  await approveBudget(planPause.id, ownerUserId);
+  await runDistributionPlanBrandGuardian(planPause.id, ownerUserId);
+  await reviewDistributionPlan(planPause.id, "APPROVE", ownerUserId, "DEMO — approved for local walkthrough.");
+  await markDistributionPlanReady(planPause.id, ownerUserId);
+  const pauseLaunch = await DistributionGateway.launch(planPause.id, ownerUserId);
+  if (pauseLaunch.outcome === "LAUNCHED") {
+    await DistributionGateway.refreshExecutionStatus(pauseLaunch.executionId);
+  } else {
+    console.log(`\nPhase 5 demo: pause-candidate plan did not launch (${pauseLaunch.outcome}) — PAUSE_LOW_VALUE_PLAN evidence will be incomplete.`);
+  }
+
+  const evaluation = await evaluateAndPersist(experiment.id, { useAiNarrative: true, requestedByUserId: ownerUserId, generatedByUserId: ownerUserId });
+  if (evaluation.status !== "COMPLETED") {
+    console.log(`\nPhase 5 demo: expected the experiment to COMPLETE with a winner, got ${evaluation.status}.`);
+  }
+
+  await createLearningFromExperiment(experiment.id, ownerUserId);
+
+  const recommendations = await generateAndPersistRecommendations({ useAiNarrative: true, requestedByUserId: ownerUserId, generatedByUserId: ownerUserId });
+  const actionTypes = new Set(recommendations.map((r) => r.actionType));
+  if (!actionTypes.has("INCREASE_BUDGET_REQUEST")) {
+    console.log("\nPhase 5 demo: expected an INCREASE_BUDGET_REQUEST recommendation (scale the winning variant) but none was generated.");
+  }
+  if (!actionTypes.has("PAUSE_LOW_VALUE_PLAN")) {
+    console.log("\nPhase 5 demo: expected a PAUSE_LOW_VALUE_PLAN recommendation (limit the weak channel) but none was generated.");
+  }
+
+  console.log(
+    `\nPhase 5 demo scenario seeded: experiment "${PHASE5_EXPERIMENT_NAME}" completed (${evaluation.status}); ${recommendations.length} Growth Director recommendations generated (${[...actionTypes].join(", ")}). Log in as Owner and open Growth Director → "What should SecurePay do next?".`
+  );
+}
+
 async function main() {
   console.log("Seeding Outreach Engine development data...\n");
 
@@ -570,6 +763,7 @@ async function main() {
   if (owner) await seedDemoScenario(owner.id);
   if (owner) await seedPhase3DemoScenario(owner.id);
   if (owner) await seedPhase4DemoScenario(owner.id);
+  if (owner) await seedPhase5DemoScenario(owner.id);
 
   console.log("Development accounts created (passwords shown once, not stored anywhere):\n");
   for (const cred of credentials) {

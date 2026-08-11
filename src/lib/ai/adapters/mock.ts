@@ -98,6 +98,21 @@ function buildImpactAnalysisMockResponse(): string {
   });
 }
 
+function buildGrowthRecommendationMockResponse(prompt: string): string {
+  // Deterministically echo back every candidate id the caller sent, so the
+  // mock adapter's output always validates against the strict "only known
+  // ids" server-side check in src/lib/growth-director/engine.ts, with zero
+  // credentials required.
+  const ids = [...prompt.matchAll(/"id"\s*:\s*"([0-9a-f-]{36})"/gi)].map((m) => m[1]);
+  return JSON.stringify({
+    notes: ids.slice(0, 10).map((id) => ({
+      recommendationId: id,
+      narrative:
+        "[MOCK] No AI enrichment available — relying entirely on the deterministic Growth Director candidate/ranking engine.",
+    })),
+  });
+}
+
 function buildCreativeMockResponse(prompt: string): string {
   const name = extractLine(prompt, "CAMPAIGN_NAME") || "this campaign";
   const cta = extractLine(prompt, "CTA") || "Learn more";
@@ -159,6 +174,9 @@ export const mockAdapter: ProviderAdapter = {
         break;
       case "IMPACT_ANALYSIS":
         text = buildImpactAnalysisMockResponse();
+        break;
+      case "GROWTH_RECOMMENDATION":
+        text = buildGrowthRecommendationMockResponse(input.prompt);
         break;
       default:
         text = buildOpportunityMockResponse(input.prompt);
