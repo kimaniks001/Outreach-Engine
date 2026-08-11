@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: Phase 3 (Targeting + Distribution) — IN PROGRESS
+Status: Phase 4 (Audience Memory, Attribution & Conversion) — IN PROGRESS
 Last updated: 2026-08-11
 
 ## 1. Principle
@@ -42,7 +42,7 @@ operationalized in code. See
 [PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md](PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md)
 and [PHASE_2_COMPLETION_REPORT.md](PHASE_2_COMPLETION_REPORT.md) for status.
 
-### PHASE 3 — Targeting + Distribution (current)
+### PHASE 3 — Targeting + Distribution (complete)
 
 Audience targeting with transparent scoring, a deterministic Channel
 Recommendation engine, budget-guarded distribution plans, and controlled
@@ -54,12 +54,20 @@ Section 5,
 [PHASE_3_TARGETING_AND_DISTRIBUTION.md](PHASE_3_TARGETING_AND_DISTRIBUTION.md),
 and [PHASE_3_COMPLETION_REPORT.md](PHASE_3_COMPLETION_REPORT.md) for status.
 
-### PHASE 4 — Audience Memory, Attribution & Conversion
+### PHASE 4 — Audience Memory, Attribution & Conversion (current)
 
-Commercial memory, audience states, attribution, SecurePay product events,
-unfinished journey recovery, next-best-action, retargeting, upsell. See
+Commercial memory (Unified Audience Profiles + organizations), deterministic
+identity resolution, the locked audience lifecycle-state engine, centralized
+consent/suppression, a secure idempotent SecurePay product-event ingestion
+boundary + deterministic simulator, threshold-based abandoned-journey
+detection, a deterministic explainable Next-Best-Action engine,
+frequency-guarded retargeting eligibility, and a four-model multi-touch
+attribution + conversion-funnel engine feeding a real (non-fabricated)
+Impact dashboard. No autonomous outreach, no Growth Director reasoning. See
 [AUDIENCE_AND_CONVERSION_ARCHITECTURE.md](AUDIENCE_AND_CONVERSION_ARCHITECTURE.md)
-Sections 2–4.
+Sections 2–4,
+[PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md](PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md),
+and [PHASE_4_COMPLETION_REPORT.md](PHASE_4_COMPLETION_REPORT.md) for status.
 
 ### PHASE 5 — Impact + Growth Director + Scale
 
@@ -69,12 +77,13 @@ automation, optional read-only Analytics API. See
 
 ## 3. Current Phase
 
-**Phase 0 — Foundation**, **Phase 1 — Command Centre + AI Core**, and
-**Phase 2 — Intelligence + Campaign + Creative** are complete and merged to
-`main`. **Phase 3 — Targeting + Distribution** is in progress on branch
-`begining-phase-3-targeting-distribution`. Phase 4 has not started. See
-[PHASE_3_COMPLETION_REPORT.md](PHASE_3_COMPLETION_REPORT.md) for status and
-final classification.
+**Phase 0 — Foundation**, **Phase 1 — Command Centre + AI Core**,
+**Phase 2 — Intelligence + Campaign + Creative**, and **Phase 3 —
+Targeting + Distribution** are complete and merged to `main`. **Phase 4 —
+Audience Memory, Attribution & Conversion** is in progress on branch
+`begining-phase-4-audience-memory-attribution-conversion`. Phase 5 has not
+started. See [PHASE_4_COMPLETION_REPORT.md](PHASE_4_COMPLETION_REPORT.md)
+for status and final classification.
 
 ## 4. Explicitly Deferred Integrations
 

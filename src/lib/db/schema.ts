@@ -741,6 +741,489 @@ export const distributionExecutions = pgTable("distribution_executions", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ============================================================
+// PHASE 4 — Audience Memory, Attribution & Conversion
+// ============================================================
+// docs/PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md. Commercial
+// memory is architected as a distinct domain from raw intelligence per
+// ADR-006 — these tables are never joined against market_signals/
+// opportunities directly; only campaigns/audience_segments/
+// distribution_plans/distribution_executions (already-public-facing
+// commercial artifacts) are referenced. RBAC: no new resource category —
+// `audience` (already documented in ACCESS_CONTROL_MODEL.md Section 3 as
+// covering "the future commercial-memory resource too") gates
+// profiles/organizations/touchpoints/consent/suppression/journeys/
+// next-best-action/retargeting; `analytics` gates attribution/conversion/
+// funnel (IMPACT pillar output). See that document's RBAC section for the
+// literal grant-table reading.
+
+export const profileTypeEnum = pgEnum("profile_type", [
+  "ANONYMOUS",
+  "PERSON",
+  "BUSINESS",
+  "KSNUMBER",
+  "PARTNER",
+]);
+
+// docs/AUDIENCE_AND_CONVERSION_ARCHITECTURE.md Section 3 — exact locked
+// lifecycle. Transitions are deterministic/event-driven — see
+// src/lib/commercial-memory/lifecycle.ts. Reused for organizations too
+// (Section 11) rather than a second parallel enum.
+export const lifecycleStateEnum = pgEnum("lifecycle_state", [
+  "UNKNOWN",
+  "REACHED",
+  "ENGAGED",
+  "INTERESTED",
+  "REGISTERED",
+  "FIRST_USE",
+  "ACTIVE",
+  "HIGH_VALUE",
+  "DORMANT",
+  "SUPPRESSED",
+]);
+
+export const orgRelationshipStatusEnum = pgEnum("org_relationship_status", [
+  "PROSPECT",
+  "ENGAGED",
+  "CUSTOMER",
+  "CHURNED",
+]);
+
+// docs/PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md Section on identity
+// resolution — deterministic exact-match identifiers only, no fuzzy
+// matching. EMAIL_REF/PHONE_REF values are hashed before storage (see
+// src/lib/commercial-memory/identity.ts::hashIdentifier) — never raw PII.
+export const identifierTypeEnum = pgEnum("identifier_type", [
+  "SESSION_TOKEN",
+  "CAMPAIGN_CLICK_REF",
+  "EMAIL_REF",
+  "PHONE_REF",
+  "KSNUMBER",
+  "ORGANIZATION_REF",
+  "PARTNER_REF",
+]);
+
+export const profileLinkActionEnum = pgEnum("profile_link_action", ["MERGE", "UNLINK"]);
+
+export const touchpointTypeEnum = pgEnum("touchpoint_type", [
+  "AD_IMPRESSION",
+  "AD_CLICK",
+  "LANDING_PAGE_VIEW",
+  "DEMO_STARTED",
+  "DEMO_COMPLETED",
+  "FORM_SUBMITTED",
+  "OUTREACH_PLANNED",
+  "OUTREACH_SENT",
+  "REPLY_RECEIVED",
+  "KSNUMBER_CREATED",
+  "SECURELINK_STARTED",
+  "SECURELINK_CREATED",
+  "KEYCONTRACT_CREATED",
+  "GROUP_SECURELINK_CREATED",
+  "SECUREFLOW_CREATED",
+  "PAYMENT_COMMITTED",
+  "AGREEMENT_COMPLETED",
+  "SETTLEMENT_COMPLETED",
+  "REFERRAL_CREATED",
+  "PRODUCT_REUSED",
+]);
+
+// docs/PHASE_4_PRODUCT_EVENT_INTEGRATION.md — the only product event types
+// this phase is authorized to ingest. Do not add values without
+// authoritative SecurePay product doctrine, same discipline as
+// moneyFlowMappingEnum.
+export const productEventTypeEnum = pgEnum("product_event_type", [
+  "KSNUMBER_CREATED",
+  "SECURELINK_DRAFT_STARTED",
+  "SECURELINK_CREATED",
+  "KEYCONTRACT_CREATED",
+  "GROUP_SECURELINK_CREATED",
+  "SECUREFLOW_CREATED",
+  "PAYMENT_COMMITTED",
+  "AGREEMENT_COMPLETED",
+  "SETTLEMENT_COMPLETED",
+  "PRODUCT_REUSED",
+]);
+
+export const productEventStatusEnum = pgEnum("product_event_status", [
+  "RECEIVED",
+  "PROCESSED",
+  "DUPLICATE",
+  "REJECTED",
+]);
+
+export const journeyTypeEnum = pgEnum("journey_type", [
+  "KSNUMBER_REGISTRATION",
+  "SECURELINK_CREATION",
+  "KEYCONTRACT_CREATION",
+  "GROUP_SECURELINK_CREATION",
+  "SECUREFLOW_CREATION",
+  "BUSINESS_ONBOARDING",
+  "DEMO",
+  "API_INTEGRATION",
+]);
+
+export const journeyStatusEnum = pgEnum("journey_status", [
+  "STARTED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "ABANDONED",
+  "CANCELLED",
+  "EXPIRED",
+]);
+
+export const attributionModelEnum = pgEnum("attribution_model", [
+  "FIRST_TOUCH",
+  "LAST_TOUCH",
+  "LINEAR",
+  "MULTI_TOUCH",
+]);
+
+export const conversionTypeEnum = pgEnum("conversion_type", [
+  "VISIT",
+  "ENGAGEMENT",
+  "KSNUMBER_CREATED",
+  "FIRST_SECURELINK",
+  "FIRST_KEYCONTRACT",
+  "FIRST_GROUP_SECURELINK",
+  "FIRST_SECUREFLOW",
+  "PAYMENT_COMMITTED",
+  "AGREEMENT_COMPLETED",
+  "SETTLEMENT_COMPLETED",
+  "REPEAT_USE",
+  "REFERRAL",
+]);
+
+export const nbaActionTypeEnum = pgEnum("nba_action_type", [
+  "EDUCATE",
+  "RESUME_JOURNEY",
+  "COMPLETE_ONBOARDING",
+  "CREATE_FIRST_PRODUCT",
+  "REPEAT_USE",
+  "UPSELL",
+  "CROSS_SELL",
+  "REQUEST_DEMO",
+  "BUSINESS_CONTACT",
+  "NO_ACTION",
+  "SUPPRESS",
+]);
+
+export const consentStatusEnum = pgEnum("consent_status", [
+  "GRANTED",
+  "DENIED",
+  "WITHDRAWN",
+  "UNKNOWN",
+]);
+
+export const suppressionReasonEnum = pgEnum("suppression_reason", [
+  "OPT_OUT",
+  "DO_NOT_CONTACT",
+  "POLICY_BLOCK",
+  "COMPLIANCE_RULE",
+  "MANUAL",
+]);
+
+export const suppressionActionEnum = pgEnum("suppression_action", ["APPLIED", "REMOVED"]);
+
+export const retargetingEligibilityEnum = pgEnum("retargeting_eligibility_status", [
+  "ELIGIBLE",
+  "NOT_ELIGIBLE",
+  "NEEDS_REVIEW",
+]);
+
+// Lightweight organization memory — not a CRM pipeline. See Section 11 of
+// the Phase 4 brief.
+export const organizations = pgTable("organizations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  legalName: text("legal_name").notNull(),
+  displayName: text("display_name").notNull(),
+  sector: text("sector"),
+  geography: text("geography"),
+  website: text("website"),
+  businessReferences: jsonb("business_references").$type<string[]>().notNull().default([]),
+  relationshipStatus: orgRelationshipStatusEnum("relationship_status").notNull().default("PROSPECT"),
+  useCases: jsonb("use_cases").$type<string[]>().notNull().default([]),
+  lifecycleState: lifecycleStateEnum("lifecycle_state").notNull().default("UNKNOWN"),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  classification: classificationEnum("classification").notNull().default("CONFIDENTIAL"),
+  source: text("source").notNull().default("manual"),
+  isDemo: boolean("is_demo").notNull().default(false),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Unified Audience Profile. RESTRICTED-classification fields
+// (emailRef/phoneRef/ksNumberRef) are hashed/referenced, never raw, and are
+// redacted from API responses for any role other than OWNER — see
+// src/lib/commercial-memory/profiles.ts::sanitizeProfileForRole. Prior
+// anonymous history is never destroyed on identity resolution: a merged
+// profile is marked via mergedIntoProfileId, not deleted — see
+// src/lib/commercial-memory/identity.ts.
+export const audienceProfiles = pgTable("audience_profiles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileType: profileTypeEnum("profile_type").notNull().default("ANONYMOUS"),
+  displayName: text("display_name"),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "set null" }),
+  ksNumberRef: text("ks_number_ref"),
+  emailRef: text("email_ref"),
+  phoneRef: text("phone_ref"),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  lifecycleState: lifecycleStateEnum("lifecycle_state").notNull().default("UNKNOWN"),
+  eligibleChannels: jsonb("eligible_channels").$type<string[]>().notNull().default([]),
+  classification: classificationEnum("classification").notNull().default("CONFIDENTIAL"),
+  source: text("source").notNull().default("manual"),
+  mergedIntoProfileId: uuid("merged_into_profile_id"),
+  retentionClass: text("retention_class").notNull().default("standard"),
+  retentionUntil: timestamp("retention_until", { withTimezone: true }),
+  legalHold: boolean("legal_hold").notNull().default(false),
+  isDemo: boolean("is_demo").notNull().default(false),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Deterministic identity linking evidence. Globally unique per
+// (identifierType, identifierValue) — an identifier belongs to exactly one
+// profile at a time; a new event claiming an identifier already owned by a
+// different profile is the merge trigger (src/lib/commercial-memory/identity.ts),
+// never a silent fuzzy match.
+export const profileIdentifiers = pgTable(
+  "profile_identifiers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => audienceProfiles.id, { onDelete: "cascade" }),
+    identifierType: identifierTypeEnum("identifier_type").notNull(),
+    identifierValue: text("identifier_value").notNull(),
+    source: text("source").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    identifierIdx: uniqueIndex("profile_identifiers_type_value_idx").on(
+      table.identifierType,
+      table.identifierValue
+    ),
+  })
+);
+
+// Append-only merge/unlink audit trail — every merge/link is reconstructable.
+// See docs/PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md "Identity
+// Resolution".
+export const profileLinks = pgTable("profile_links", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  fromProfileId: uuid("from_profile_id")
+    .notNull()
+    .references(() => audienceProfiles.id, { onDelete: "cascade" }),
+  toProfileId: uuid("to_profile_id")
+    .notNull()
+    .references(() => audienceProfiles.id, { onDelete: "cascade" }),
+  action: profileLinkActionEnum("action").notNull(),
+  reason: text("reason").notNull(),
+  evidence: jsonb("evidence").$type<Record<string, unknown>>().notNull().default({}),
+  performedByUserId: uuid("performed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Append-only. Current effective consent per (profileId, channel) is the
+// latest row — registration/product use is never itself a consent event
+// (no row is written for it). See Section 21 "membership ... is NOT
+// automatically marketing consent".
+export const consentRecords = pgTable("consent_records", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: uuid("profile_id")
+    .notNull()
+    .references(() => audienceProfiles.id, { onDelete: "cascade" }),
+  channel: channelTypeEnum("channel"), // null = general marketing consent
+  status: consentStatusEnum("status").notNull(),
+  legalBasis: text("legal_basis"),
+  source: text("source").notNull(),
+  recordedByUserId: uuid("recorded_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  notes: text("notes"),
+});
+
+// Append-only. Current suppression state = latest row's action; ACTIVE
+// suppression overrides next-best-action/retargeting/outreach-planning —
+// see src/lib/commercial-memory/consent.ts::isSuppressed.
+export const suppressionRecords = pgTable("suppression_records", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: uuid("profile_id")
+    .notNull()
+    .references(() => audienceProfiles.id, { onDelete: "cascade" }),
+  action: suppressionActionEnum("action").notNull(),
+  reason: suppressionReasonEnum("reason"),
+  source: text("source").notNull(),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  reviewDate: timestamp("review_date", { withTimezone: true }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Append-oriented commercial touch history. Section 12 of the Phase 4
+// brief. No arbitrary free-form sensitive data in metadata — see
+// src/lib/commercial-memory/touchpoints.ts.
+export const touchpoints = pgTable("touchpoints", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: uuid("profile_id")
+    .notNull()
+    .references(() => audienceProfiles.id, { onDelete: "cascade" }),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "set null" }),
+  campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+  distributionPlanId: uuid("distribution_plan_id").references(() => distributionPlans.id, {
+    onDelete: "set null",
+  }),
+  executionId: uuid("execution_id").references(() => distributionExecutions.id, { onDelete: "set null" }),
+  channel: channelTypeEnum("channel"),
+  type: touchpointTypeEnum("type").notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+  sourceSystem: text("source_system").notNull().default("outreach_engine"),
+  externalRef: text("external_ref"),
+  metadata: jsonb("metadata").$type<Record<string, string | number | boolean>>().notNull().default({}),
+  classification: classificationEnum("classification").notNull().default("INTERNAL"),
+  isDemo: boolean("is_demo").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Inbound SecurePay product-event ingestion log — the idempotency source
+// of truth. Unique on (source, idempotencyKey): a duplicate insert attempt
+// is caught here, never creating a second touchpoint/journey/conversion.
+// See docs/PHASE_4_PRODUCT_EVENT_INTEGRATION.md.
+export const productEvents = pgTable(
+  "product_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    source: text("source").notNull(),
+    externalEventId: text("external_event_id").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    productEventType: productEventTypeEnum("product_event_type").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    schemaVersion: text("schema_version").notNull().default("1"),
+    profileId: uuid("profile_id").references(() => audienceProfiles.id, { onDelete: "set null" }),
+    organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "set null" }),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    status: productEventStatusEnum("status").notNull().default("RECEIVED"),
+    rejectionReason: text("rejection_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    idempotencyIdx: uniqueIndex("product_events_source_idempotency_idx").on(
+      table.source,
+      table.idempotencyKey
+    ),
+  })
+);
+
+// Product Journey state — Section 15. Abandonment is threshold-based, not
+// instant — see src/lib/journeys/abandonment.ts.
+export const productJourneys = pgTable("product_journeys", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: uuid("profile_id")
+    .notNull()
+    .references(() => audienceProfiles.id, { onDelete: "cascade" }),
+  journeyType: journeyTypeEnum("journey_type").notNull(),
+  currentStep: text("current_step").notNull(),
+  status: journeyStatusEnum("status").notNull().default("STARTED"),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  originCampaignId: uuid("origin_campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+  originTouchpointId: uuid("origin_touchpoint_id").references(() => touchpoints.id, { onDelete: "set null" }),
+  productReference: text("product_reference"),
+  resumeReference: text("resume_reference"),
+  abandonmentReason: text("abandonment_reason"),
+  isDemo: boolean("is_demo").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Meaningful SecurePay conversion milestones — Section 24. Never
+// fabricated: `value` is null unless a real monetary figure is known.
+export const conversionEvents = pgTable("conversion_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: uuid("profile_id")
+    .notNull()
+    .references(() => audienceProfiles.id, { onDelete: "cascade" }),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "set null" }),
+  conversionType: conversionTypeEnum("conversion_type").notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  sourceProductEventId: uuid("source_product_event_id").references(() => productEvents.id, {
+    onDelete: "set null",
+  }),
+  value: numeric("value", { precision: 12, scale: 2 }),
+  isDemo: boolean("is_demo").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Multi-touch attribution — Section 23. One row per (conversion, touch,
+// model). Full touch history is preserved; nothing here overwrites the
+// original touchpoint. Reproducible: a pure function of touchpoint history
+// — see src/lib/attribution/engine.ts.
+export const attributionRecords = pgTable("attribution_records", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  conversionEventId: uuid("conversion_event_id")
+    .notNull()
+    .references(() => conversionEvents.id, { onDelete: "cascade" }),
+  profileId: uuid("profile_id")
+    .notNull()
+    .references(() => audienceProfiles.id, { onDelete: "cascade" }),
+  campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+  distributionPlanId: uuid("distribution_plan_id").references(() => distributionPlans.id, {
+    onDelete: "set null",
+  }),
+  channel: channelTypeEnum("channel"),
+  touchpointId: uuid("touchpoint_id").references(() => touchpoints.id, { onDelete: "set null" }),
+  attributionModel: attributionModelEnum("attribution_model").notNull(),
+  weight: numeric("weight", { precision: 5, scale: 4 }).notNull(),
+  rationale: text("rationale").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Append-only, deterministic, explainable — Sections 17/18/40. Current
+// recommendation per profile = latest row. urgencyEnum (Phase 2) is reused
+// as priority rather than a new enum.
+export const nextBestActions = pgTable("next_best_actions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: uuid("profile_id")
+    .notNull()
+    .references(() => audienceProfiles.id, { onDelete: "cascade" }),
+  actionType: nbaActionTypeEnum("action_type").notNull(),
+  reason: text("reason").notNull(),
+  priority: urgencyEnum("priority").notNull().default("MEDIUM"),
+  eligibleChannels: jsonb("eligible_channels").$type<string[]>().notNull().default([]),
+  relatedProduct: text("related_product"),
+  cta: text("cta"),
+  triggeringState: jsonb("triggering_state").$type<Record<string, unknown>>().notNull().default({}),
+  blockedActions: jsonb("blocked_actions").$type<string[]>().notNull().default([]),
+  suppressionState: text("suppression_state").notNull(),
+  ruleEngineVersion: text("rule_engine_version").notNull(),
+  aiNarrativeUsed: boolean("ai_narrative_used").notNull().default(false),
+  aiUsageRecordId: uuid("ai_usage_record_id").references(() => aiUsageRecords.id, { onDelete: "set null" }),
+  generatedByUserId: uuid("generated_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Append-only decision record, not automatic execution — Section 20.
+// Current eligibility per (profileId, campaignId, channel) = latest row.
+export const retargetingEligibility = pgTable("retargeting_eligibility", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: uuid("profile_id")
+    .notNull()
+    .references(() => audienceProfiles.id, { onDelete: "cascade" }),
+  campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+  channel: channelTypeEnum("channel"),
+  eligibility: retargetingEligibilityEnum("eligibility").notNull(),
+  reason: text("reason").notNull(),
+  checks: jsonb("checks").$type<Record<string, unknown>>().notNull().default({}),
+  evaluatedByUserId: uuid("evaluated_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type AiProvider = typeof aiProviders.$inferSelect;
@@ -762,3 +1245,16 @@ export type ChannelRecommendation = typeof channelRecommendations.$inferSelect;
 export type DistributionPlan = typeof distributionPlans.$inferSelect;
 export type BudgetApproval = typeof budgetApprovals.$inferSelect;
 export type DistributionExecution = typeof distributionExecutions.$inferSelect;
+export type Organization = typeof organizations.$inferSelect;
+export type AudienceProfile = typeof audienceProfiles.$inferSelect;
+export type ProfileIdentifier = typeof profileIdentifiers.$inferSelect;
+export type ProfileLink = typeof profileLinks.$inferSelect;
+export type ConsentRecord = typeof consentRecords.$inferSelect;
+export type SuppressionRecord = typeof suppressionRecords.$inferSelect;
+export type Touchpoint = typeof touchpoints.$inferSelect;
+export type ProductEvent = typeof productEvents.$inferSelect;
+export type ProductJourney = typeof productJourneys.$inferSelect;
+export type ConversionEvent = typeof conversionEvents.$inferSelect;
+export type AttributionRecord = typeof attributionRecords.$inferSelect;
+export type NextBestAction = typeof nextBestActions.$inferSelect;
+export type RetargetingEligibility = typeof retargetingEligibility.$inferSelect;
