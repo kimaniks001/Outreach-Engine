@@ -351,9 +351,12 @@ Analytics API auth, CRM connectors, n8n/automation connectors, scheduled/
 cron-driven automation, production deployment hardening, automated
 data-retention sweeps, expanded/true side-by-side benchmarking.
 
-**Commit SHA:** to be recorded after commit (see PR).
+**Commit SHA:** `d10214a41beda477d191deedf0d66112f310c634` — "Phase 5:
+Impact + Growth Director + Scale (final planned phase)" (on
+`begining-phase-5-impact-growth-director-scale`, parent `84183c3` on
+`main`).
 
-**Draft PR URL:** to be recorded after push (see PR).
+**Draft PR URL:** see the draft PR opened from this branch into `main`.
 
 **CI State:** no CI is configured on this repository (confirmed via
 absence of `.github/workflows/`) — not applicable, same as Phase 0-4.
