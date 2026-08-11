@@ -305,9 +305,12 @@ multi-agent orchestration, community features. Confirmed absent by direct
 code review and grep — see
 `docs/PHASE_4_TEST_AND_VALIDATION_REPORT.md` Section 6.
 
-**Commit SHA:** to be recorded after commit (see PR).
+**Commit SHA:** `7c9d001e9eede3c16316716d061006bafd562df2` — "Phase 4:
+Audience Memory, Attribution + Conversion" (on
+`begining-phase-4-audience-memory-attribution-conversion`, parent
+`bf84759` on `main`).
 
-**Draft PR URL:** to be recorded after push (see PR).
+**Draft PR URL:** see the draft PR opened from this branch into `main`.
 
 **CI State:** no CI is configured on this repository (confirmed via
 absence of `.github/workflows/`) — not applicable, same as Phase 0-3.
