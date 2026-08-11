@@ -59,6 +59,38 @@ function buildBrandReviewMockResponse(): string {
   });
 }
 
+function buildAudienceMockResponse(prompt: string): string {
+  const segmentName = extractLine(prompt, "SEGMENT_NAME") || "this segment";
+
+  return JSON.stringify({
+    sector: "[MOCK] Unspecified",
+    geography: "[MOCK] Unspecified",
+    businessCriteria: `[MOCK] Deterministic placeholder for "${segmentName}" — configure ANTHROPIC_API_KEY for a real classification.`,
+    roleFunctionCriteria: "[MOCK] Not inferred — mock provider does not reason about this.",
+    companyCriteria: "[MOCK] Not inferred.",
+    intentCriteria: "[MOCK] Not inferred.",
+    suggestedChannels: [],
+    scoreProposal: {
+      problemFit: 40,
+      productFit: 40,
+      intent: 40,
+      reachability: 40,
+      commercialValue: 40,
+      evidenceStrength: 20,
+    },
+    exclusions: "[MOCK] None proposed.",
+    caveats:
+      "This output was produced by the mock/test AI provider, not a live model. Treat only as a UI/flow demonstration.",
+  });
+}
+
+function buildChannelRecommendationMockResponse(): string {
+  return JSON.stringify({
+    narrative:
+      "[MOCK] No AI enrichment available — relying entirely on the deterministic channel-recommendation rule engine.",
+  });
+}
+
 function buildCreativeMockResponse(prompt: string): string {
   const name = extractLine(prompt, "CAMPAIGN_NAME") || "this campaign";
   const cta = extractLine(prompt, "CTA") || "Learn more";
@@ -111,6 +143,12 @@ export const mockAdapter: ProviderAdapter = {
         break;
       case "CREATIVE_IDEATION":
         text = buildCreativeMockResponse(input.prompt);
+        break;
+      case "AUDIENCE_CLASSIFICATION":
+        text = buildAudienceMockResponse(input.prompt);
+        break;
+      case "CHANNEL_RECOMMENDATION":
+        text = buildChannelRecommendationMockResponse();
         break;
       default:
         text = buildOpportunityMockResponse(input.prompt);

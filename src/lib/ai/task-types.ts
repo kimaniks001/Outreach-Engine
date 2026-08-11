@@ -10,6 +10,12 @@ export const AI_TASK_TYPES = [
   "CONTENT_COPY",
   "CREATIVE_IDEATION",
   "AUDIENCE_CLASSIFICATION",
+  // Phase 3 — docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md Section 11. Optional
+  // narrative enrichment only, mirroring BRAND_REVIEW's role: the
+  // deterministic channel-recommendation rule engine
+  // (src/lib/distribution/channel-recommendation.ts) is always authoritative
+  // for the channel list/priority; this task can never change it.
+  "CHANNEL_RECOMMENDATION",
   "IMPACT_ANALYSIS",
   "GROWTH_RECOMMENDATION",
 ] as const;

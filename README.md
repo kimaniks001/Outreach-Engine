@@ -39,26 +39,33 @@ Full doctrine: [docs/OUTREACH_ENGINE_DOCTRINE.md](docs/OUTREACH_ENGINE_DOCTRINE.
 |---|---|---|
 | 0 | Foundation | Complete |
 | 1 | Command Centre + AI Core | Complete |
-| 2 | Intelligence + Campaign + Creative | **In progress** |
-| 3 | Targeting + Distribution | Not started |
+| 2 | Intelligence + Campaign + Creative | Complete |
+| 3 | Targeting + Distribution | **In progress** |
 | 4 | Audience Memory, Attribution & Conversion | Not started |
 | 5 | Impact + Growth Director + Scale | Not started |
 
 Full roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 
-## Current Phase: Phase 2 — Intelligence + Campaign + Creative
+## Current Phase: Phase 3 — Targeting + Distribution
 
-Phase 2 makes the Outreach Engine useful for the first time: a real Market
-Intelligence workspace (signals, source provenance, AI-assisted opportunity
-analysis with transparent scoring), a deterministic Brand Guardian, a
-human-approval-gated Campaign lifecycle, and an image-first Content &
-Creative Studio — proving INTELLIGENCE → OPPORTUNITY → BRAND REVIEW →
-CAMPAIGN → CREATIVE → HUMAN APPROVAL end to end. It also introduces the
-first live AI provider (Anthropic, optional) alongside a deterministic mock
-provider so the app never requires credentials to be usable. See
-[docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md](docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md)
-for what was built, and
-[docs/PHASE_2_COMPLETION_REPORT.md](docs/PHASE_2_COMPLETION_REPORT.md) for
+Phase 3 turns an approved campaign into a scored audience, a deterministic
+channel plan, a budget-guarded distribution plan, and a controlled
+(simulated-only) execution — proving APPROVED CAMPAIGN → TARGET AUDIENCE →
+AUDIENCE SCORE → CHANNEL PLAN → BUDGET / APPROVAL → CONTROLLED DISTRIBUTION
+→ EXECUTION RECORD end to end. Distribution execution is real
+architecture, not a mock UI: a provider-agnostic adapter interface
+(ADR-001) with one working implementation — a deterministic **simulated**
+adapter, clearly labeled `SIMULATED / NOT LIVE` everywhere it appears —
+plus boundary-only Google Ads/Meta Ads stubs that never falsely report
+`AVAILABLE`. Safe Mode blocks execution server-side; a centralized budget
+guard makes silent spend increases and launches above cap structurally
+impossible; a Brand Guardian gate blocks unreviewed creative from becoming
+executable. See
+[docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md](docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md)
+for what was built,
+[docs/PHASE_3_PROVIDER_ADAPTERS.md](docs/PHASE_3_PROVIDER_ADAPTERS.md) for
+the adapter architecture, and
+[docs/PHASE_3_COMPLETION_REPORT.md](docs/PHASE_3_COMPLETION_REPORT.md) for
 status and final classification.
 
 ## Running Locally
@@ -70,7 +77,10 @@ docker compose up -d db           # or: docker run ... postgres:16-alpine, see d
 npm install
 npm run db:migrate
 npm run db:seed                   # prints one-time random dev passwords for all 6 roles,
-                                   # seeds one clearly-labeled DEMO market signal
+                                   # seeds one clearly-labeled DEMO market signal, and
+                                   # (once that demo campaign is walked to
+                                   # READY_FOR_DISTRIBUTION) an approved demo audience +
+                                   # a running SIMULATED distribution plan
 npm run dev                       # http://localhost:3000
 ```
 
@@ -82,15 +92,19 @@ npm run dev                       # http://localhost:3000
   [docs/PHASE_2_AI_PROVIDER_INTEGRATION.md](docs/PHASE_2_AI_PROVIDER_INTEGRATION.md).
 - No autonomous web crawling, social scraping, or continuous background
   monitoring.
-- No n8n, Clay, HubSpot, Meta/Google/TikTok/LinkedIn Ads execution, paid
-  media spend, or social/email/WhatsApp outreach — no distribution/publish
-  action of any kind exists; approved campaigns stop at
-  `READY_FOR_DISTRIBUTION`.
-- No audience targeting, commercial memory, retargeting, or journey
-  recovery (Phase 3–4).
+- No n8n, Clay, or HubSpot integration.
+- No live Google/Meta/TikTok/LinkedIn Ads execution or real paid-media
+  spend — Phase 3 ships exactly one working distribution adapter, a
+  deterministic **simulated** one, plus boundary-only Google/Meta stubs
+  that never falsely report `AVAILABLE`. See
+  [docs/PHASE_3_PROVIDER_ADAPTERS.md](docs/PHASE_3_PROVIDER_ADAPTERS.md).
+- No production email/WhatsApp/partner-platform sending — those channels
+  are plannable and simulate-launchable, not live-sendable, in Phase 3.
+- No commercial memory, unified audience profiles, attribution, retargeting,
+  or journey recovery (Phase 4).
 - No product-event attribution, Growth Director reasoning, or Analytics API
   (Phase 4–5).
-- No credentials are committed; none are required to run Phase 1 or 2
+- No credentials are committed; none are required to run Phase 1-3
   locally.
 
 ## Documentation Map
@@ -116,6 +130,10 @@ npm run dev                       # http://localhost:3000
 | [docs/PHASE_2_AI_PROVIDER_INTEGRATION.md](docs/PHASE_2_AI_PROVIDER_INTEGRATION.md) | Live Anthropic + mock AI provider integration |
 | [docs/PHASE_2_TEST_AND_VALIDATION_REPORT.md](docs/PHASE_2_TEST_AND_VALIDATION_REPORT.md) | Phase 2 lint/typecheck/test/build/security results |
 | [docs/PHASE_2_COMPLETION_REPORT.md](docs/PHASE_2_COMPLETION_REPORT.md) | Phase 2 delivery record |
+| [docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md](docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md) | Phase 3 architecture and design decisions |
+| [docs/PHASE_3_PROVIDER_ADAPTERS.md](docs/PHASE_3_PROVIDER_ADAPTERS.md) | Distribution adapter architecture, simulated adapter, Google/Meta readiness |
+| [docs/PHASE_3_TEST_AND_VALIDATION_REPORT.md](docs/PHASE_3_TEST_AND_VALIDATION_REPORT.md) | Phase 3 lint/typecheck/test/build/security results |
+| [docs/PHASE_3_COMPLETION_REPORT.md](docs/PHASE_3_COMPLETION_REPORT.md) | Phase 3 delivery record |
 | [docs/adr/](docs/adr/) | Architecture Decision Records |
 
 ## Build Mode

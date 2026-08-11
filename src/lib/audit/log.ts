@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 
 // Matches docs/AUDIT_AND_CONTROL.md Section 2, extended with ACCESS_DENIED
@@ -26,6 +26,21 @@ export const AUDIT_EVENT_TYPES = [
   "CAMPAIGN_BRAND_REVIEWED",
   "CAMPAIGN_REVIEWED",
   "CREATIVE_GENERATED",
+  // Phase 3 — docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md
+  "AUDIENCE_CREATED",
+  "AUDIENCE_CLASSIFIED",
+  "AUDIENCE_REVIEWED",
+  "CHANNEL_RECOMMENDATION_GENERATED",
+  "DISTRIBUTION_PLAN_CREATED",
+  "DISTRIBUTION_PLAN_REVIEWED",
+  "DISTRIBUTION_PLAN_BRAND_REVIEWED",
+  "BUDGET_PROPOSED",
+  "BUDGET_APPROVED",
+  "EXECUTION_STARTED",
+  "EXECUTION_PAUSED",
+  "EXECUTION_FAILED",
+  "EXECUTION_CANCELLED",
+  "SAFE_MODE_BLOCKED_EXECUTION",
 ] as const;
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
 
@@ -81,4 +96,14 @@ export async function listRecentAuditEvents(limit = 100): Promise<AuditEventRow[
     .limit(limit);
 
   return rows;
+}
+
+// Used by the Today dashboard to show honest, non-fabricated counts (e.g.
+// blocked Safe Mode execution attempts) without pulling full event rows.
+export async function countAuditEventsByType(eventType: AuditEventType): Promise<number> {
+  const rows = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(schema.auditEvents)
+    .where(eq(schema.auditEvents.eventType, eventType));
+  return rows[0]?.count ?? 0;
 }
