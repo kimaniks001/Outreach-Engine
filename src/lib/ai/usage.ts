@@ -1,6 +1,15 @@
 import { desc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 
+// Set by src/lib/ai/tasks/run-structured-task.ts immediately after it knows
+// whether the raw output actually parsed/validated — see
+// docs/PHASE_5_MODEL_PERFORMANCE_AND_COST.md. Null (never called) means
+// "not a structured-output call" or "call did not reach EXECUTED", which
+// is distinct from false ("executed but failed schema validation").
+export async function markSchemaValid(usageRecordId: string, valid: boolean): Promise<void> {
+  await db.update(schema.aiUsageRecords).set({ schemaValid: valid }).where(eq(schema.aiUsageRecords.id, usageRecordId));
+}
+
 export interface UsageRow {
   id: string;
   taskType: string;

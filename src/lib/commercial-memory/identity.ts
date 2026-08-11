@@ -147,6 +147,8 @@ export async function resolveProfile(input: ResolveProfileInput): Promise<typeof
         displayName: input.displayName ?? null,
         organizationId: input.organizationId ?? null,
         ksNumberRef: input.identifiers.ksNumber ?? null,
+        emailRef: input.identifiers.email ? hashIdentifier(normalizeEmail(input.identifiers.email)) : null,
+        phoneRef: input.identifiers.phone ? hashIdentifier(normalizePhone(input.identifiers.phone)) : null,
         source: input.source,
         isDemo: input.isDemo ?? false,
       })
@@ -184,6 +186,8 @@ export async function resolveProfile(input: ResolveProfileInput): Promise<typeof
       displayName: input.displayName ?? existing.displayName,
       organizationId: input.organizationId ?? existing.organizationId,
       ksNumberRef: input.identifiers.ksNumber ?? existing.ksNumberRef,
+      emailRef: input.identifiers.email ? hashIdentifier(normalizeEmail(input.identifiers.email)) : existing.emailRef,
+      phoneRef: input.identifiers.phone ? hashIdentifier(normalizePhone(input.identifiers.phone)) : existing.phoneRef,
       lastSeenAt: new Date(),
       updatedAt: new Date(),
     })

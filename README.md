@@ -41,43 +41,49 @@ Full doctrine: [docs/OUTREACH_ENGINE_DOCTRINE.md](docs/OUTREACH_ENGINE_DOCTRINE.
 | 1 | Command Centre + AI Core | Complete |
 | 2 | Intelligence + Campaign + Creative | Complete |
 | 3 | Targeting + Distribution | Complete |
-| 4 | Audience Memory, Attribution & Conversion | **In progress** |
-| 5 | Impact + Growth Director + Scale | Not started |
+| 4 | Audience Memory, Attribution & Conversion | Complete |
+| 5 | Impact + Growth Director + Scale | **Complete — final planned phase** |
 
 Full roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 
-## Current Phase: Phase 4 — Audience Memory, Attribution & Conversion
+## Current Phase: Phase 5 — Impact + Growth Director + Scale (final)
 
-Phase 4 turns Outreach Engine from a campaign/distribution system into a
-commercial-memory and conversion system, proving REACH → ENGAGEMENT →
-IDENTITY → PRODUCT BEHAVIOR → ATTRIBUTION → JOURNEY STATE →
-NEXT-BEST-ACTION → CONVERSION / RETENTION / UPSELL end to end. A Unified
-Audience Profile with conservative, deterministic identity resolution
-(exact-identifier matching only — never fuzzy, never destroys prior
-anonymous history); a locked, deterministic lifecycle-state engine
-(`UNKNOWN` → ... → `HIGH_VALUE`, with `DORMANT`/`SUPPRESSED` overrides);
-centralized consent/suppression that overrides next-best-action and
-retargeting everywhere; a secure, idempotent SecurePay product-event
-ingestion boundary with a deterministic simulator (no live SecurePay
-integration required); threshold-based abandoned-journey detection; a
-fully explainable, deterministic Next-Best-Action engine (AI may only add
-narrative text, never change the decision); a four-model multi-touch
-attribution engine with reproducible weights; and a real, non-fabricated
-Impact dashboard (funnel + drop-off diagnostics + conversions by
-campaign/channel). See
-[docs/PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md](docs/PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md)
+Phase 5 closes the commercial learning loop — MEASURE → LEARN → RECOMMEND
+→ PRIORITIZE → ACT WITH APPROVAL → MEASURE AGAIN — and is the **final
+planned phase** of the six-phase roadmap. Impact scorecards (campaign/
+channel/product/audience) and a never-fabricated ROI/efficiency model;
+real A/B experiments evaluated against actual SecurePay behavior (not
+clicks) with a deterministic winner/inconclusive engine; durable
+Commercial Learning records; a hybrid deterministic + AI Growth Director
+that generates ranked, evidence-backed recommendations and answers "What
+should SecurePay do next?" with 3-7 real, traceable items; risk-tiered
+human approval (HIGH-risk actions are Owner-only, budget changes are
+never automated even when approved); a model-performance/model-
+recommendation engine with a small SecurePay-specific benchmark suite;
+full AI cost governance with a circuit-breaker hard-budget guard inside
+the AI Gateway; a minimal, audited retention-review/anonymization
+closure; and a narrow, internal, read-only Analytics API. See
+[docs/PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md](docs/PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md)
 for what was built,
-[docs/PHASE_4_PRODUCT_EVENT_INTEGRATION.md](docs/PHASE_4_PRODUCT_EVENT_INTEGRATION.md)
-for the ingestion boundary,
-[docs/PHASE_4_PRIVACY_CONSENT_RETENTION.md](docs/PHASE_4_PRIVACY_CONSENT_RETENTION.md)
-for the privacy model, and
-[docs/PHASE_4_COMPLETION_REPORT.md](docs/PHASE_4_COMPLETION_REPORT.md) for
+[docs/PHASE_5_EXPERIMENTS_AND_LEARNING.md](docs/PHASE_5_EXPERIMENTS_AND_LEARNING.md)
+for experiments/learning,
+[docs/PHASE_5_MODEL_PERFORMANCE_AND_COST.md](docs/PHASE_5_MODEL_PERFORMANCE_AND_COST.md)
+for model self-check/cost control,
+[docs/PHASE_5_ANALYTICS_API.md](docs/PHASE_5_ANALYTICS_API.md) for the
+Analytics API boundary, and
+[docs/PHASE_5_COMPLETION_REPORT.md](docs/PHASE_5_COMPLETION_REPORT.md) for
 status and final classification.
 
-Phase 3 (previous): audience targeting, budget-guarded distribution
-plans, and controlled (simulated-only) execution. See
-[docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md](docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md)
-and [docs/PHASE_3_COMPLETION_REPORT.md](docs/PHASE_3_COMPLETION_REPORT.md).
+**No Phase 6 exists or is planned.** Future work beyond this roadmap is
+tracked as post-roadmap enhancements (see
+[docs/PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md](docs/PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md)
+Section 12), not new phases.
+
+Phase 4 (previous): commercial memory, identity resolution, lifecycle
+state, product-event ingestion, journeys, next-best-action, and
+attribution. See
+[docs/PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md](docs/PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md)
+and [docs/PHASE_4_COMPLETION_REPORT.md](docs/PHASE_4_COMPLETION_REPORT.md).
 
 ## Running Locally
 
@@ -88,11 +94,13 @@ docker compose up -d db           # or: docker run ... postgres:16-alpine, see d
 npm install
 npm run db:migrate
 npm run db:seed                   # prints one-time random dev passwords for all 6 roles,
-                                   # seeds one clearly-labeled DEMO market signal, and
-                                   # (once that demo campaign is walked to
-                                   # READY_FOR_DISTRIBUTION) an approved demo audience +
-                                   # a running SIMULATED distribution plan, then a full
-                                   # Phase 4 construction demo journey (see below)
+                                   # seeds one clearly-labeled DEMO market signal; once
+                                   # that demo campaign is walked to READY_FOR_DISTRIBUTION
+                                   # (via the UI/API — one-time manual step, same precedent
+                                   # since Phase 2), re-running db:seed cascades an approved
+                                   # demo audience, a running SIMULATED distribution plan,
+                                   # a full Phase 4 construction demo journey, and a Phase 5
+                                   # A/B experiment + Growth Director recommendations
 npm run dev                       # http://localhost:3000
 ```
 
@@ -113,15 +121,27 @@ npm run dev                       # http://localhost:3000
 - No production email/WhatsApp/partner-platform sending — those channels
   are plannable and simulate-launchable, not live-sendable, in Phase 3-4.
 - No autonomous outreach: next-best-action and retargeting eligibility are
-  decisions, never automatic sends or automatic distribution-plan launches
-  (Phase 4).
-- No Growth Director reasoning, autonomous budget/campaign optimization,
-  model benchmarking, or public/read-only Analytics API yet (Phase 5).
+  decisions, never automatic sends or automatic distribution-plan launches.
+- No autonomous ad spending, budget changes, or bulk outreach — Growth
+  Director's action bridge hard-refuses to automate `INCREASE_BUDGET_REQUEST`/
+  `REDUCE_BUDGET_REQUEST`, always returning `BLOCKED`.
+  See [docs/PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md](docs/PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md).
+- No automatic/hourly AI model-routing switching — a model recommendation
+  only ever changes routing after explicit Owner approval **and** a
+  separate explicit "apply" action.
+- No external-client Analytics API auth (API keys/OAuth) — the Analytics
+  API is internal, session-authenticated, read-only only. See
+  [docs/PHASE_5_ANALYTICS_API.md](docs/PHASE_5_ANALYTICS_API.md).
+- No scheduler/cron/queue infrastructure — every refresh/sweep function is
+  on-demand and manually triggerable; the interface is documented for a
+  future automation layer, not built as one.
 - No CRM replacement, HubSpot/Clay/n8n integration, or data warehouse.
-- No credentials are committed; none are required to run Phase 1-4
+- No credentials are committed; none are required to run Phase 1-5
   locally — see
   [docs/PHASE_4_PRODUCT_EVENT_INTEGRATION.md](docs/PHASE_4_PRODUCT_EVENT_INTEGRATION.md)
   for the optional (unset-by-default) product-event ingestion secret.
+- No Phase 6 — this is the final planned phase. Future work is tracked as
+  post-roadmap enhancements, not new phases.
 
 ## Documentation Map
 
@@ -155,6 +175,12 @@ npm run dev                       # http://localhost:3000
 | [docs/PHASE_4_PRIVACY_CONSENT_RETENTION.md](docs/PHASE_4_PRIVACY_CONSENT_RETENTION.md) | Data minimization, consent/suppression, retention model |
 | [docs/PHASE_4_TEST_AND_VALIDATION_REPORT.md](docs/PHASE_4_TEST_AND_VALIDATION_REPORT.md) | Phase 4 lint/typecheck/test/build/security results |
 | [docs/PHASE_4_COMPLETION_REPORT.md](docs/PHASE_4_COMPLETION_REPORT.md) | Phase 4 delivery record |
+| [docs/PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md](docs/PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md) | Phase 5 architecture and design decisions |
+| [docs/PHASE_5_EXPERIMENTS_AND_LEARNING.md](docs/PHASE_5_EXPERIMENTS_AND_LEARNING.md) | Experiment domain, evaluation engine, Commercial Learning |
+| [docs/PHASE_5_MODEL_PERFORMANCE_AND_COST.md](docs/PHASE_5_MODEL_PERFORMANCE_AND_COST.md) | Model self-check, benchmark suite, AI cost governance |
+| [docs/PHASE_5_ANALYTICS_API.md](docs/PHASE_5_ANALYTICS_API.md) | Internal read-only Analytics API boundary |
+| [docs/PHASE_5_TEST_AND_VALIDATION_REPORT.md](docs/PHASE_5_TEST_AND_VALIDATION_REPORT.md) | Phase 5 lint/typecheck/test/build/security results |
+| [docs/PHASE_5_COMPLETION_REPORT.md](docs/PHASE_5_COMPLETION_REPORT.md) | Phase 5 delivery record — final phase |
 | [docs/adr/](docs/adr/) | Architecture Decision Records |
 
 ## Build Mode

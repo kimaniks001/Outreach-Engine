@@ -83,6 +83,17 @@ export type AIExecutionResult =
       selectedModel: AIModel;
       error: string;
       usageRecordId: string;
+    }
+  | {
+      // Phase 5 — docs/PHASE_5_MODEL_PERFORMANCE_AND_COST.md Section 28.
+      // Routing succeeded but an active hard AI budget cap for this
+      // provider/model/task-type/global scope is already met or exceeded.
+      // Fails safely — never silently falls back to an unbudgeted call.
+      outcome: "BUDGET_EXCEEDED";
+      selectedProvider: AIProvider;
+      selectedModel: AIModel;
+      reason: string;
+      usageRecordId: string;
     };
 
 export interface AIUsageRecord {

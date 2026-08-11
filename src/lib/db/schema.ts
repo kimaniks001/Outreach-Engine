@@ -142,6 +142,15 @@ export const aiUsageRecords = pgTable("ai_usage_records", {
   outputUnits: integer("output_units"),
   estimatedCostUsd: numeric("estimated_cost_usd", { precision: 10, scale: 5 }),
   correlationId: text("correlation_id").notNull(),
+  // Phase 5 — docs/PHASE_5_MODEL_PERFORMANCE_AND_COST.md. Null until a
+  // structured-task caller (src/lib/ai/tasks/run-structured-task.ts) knows
+  // whether the raw output actually parsed/validated against its schema;
+  // set immediately after that check. Needed because `success` above only
+  // reflects the Gateway call itself (EXECUTED) — malformed JSON is a
+  // downstream, per-call concern this column makes queryable for the
+  // model-performance "schema-valid rate" metric, which had no persisted
+  // signal to compute from before this phase.
+  schemaValid: boolean("schema_valid"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -1224,6 +1233,339 @@ export const retargetingEligibility = pgTable("retargeting_eligibility", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ============================================================
+// PHASE 5 — Impact + Growth Director + Scale
+// ============================================================
+// docs/PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md. Final planned phase — no
+// Phase 6 tables. RBAC: no new resource category. `campaigns` gates
+// experiment/learning CRUD and LOW/MEDIUM-risk recommendation approval
+// (Strategist drafts, Owner+Growth Director approve — same capability
+// Growth Director already holds for campaigns); `analytics` gates
+// recommendation/impact/experiment-result viewing; `model-config` gates
+// model performance/recommendations/benchmark/AI-budget (Owner-only
+// mutation, Growth Director view-only — the same asymmetry already
+// established for audience/distribution approval in Phase 3); `audience`
+// gates retention actions. See that document's RBAC section for the
+// literal grant-table reading.
+
+export const experimentStatusEnum = pgEnum("experiment_status", [
+  "DRAFT",
+  "PLANNED",
+  "RUNNING",
+  "COMPLETED",
+  "INCONCLUSIVE",
+  "CANCELLED",
+]);
+
+// Reused across experiments/learnings/recommendations/model performance —
+// one confidence vocabulary, not four. INSUFFICIENT_DATA/_SAMPLE is a
+// first-class state, never silently upgraded to a real confidence level.
+export const evidenceConfidenceEnum = pgEnum("evidence_confidence", [
+  "INSUFFICIENT_DATA",
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+]);
+
+export const learningStatusEnum = pgEnum("learning_status", [
+  "ACTIVE",
+  "NEEDS_REVIEW",
+  "SUPERSEDED",
+  "REJECTED",
+]);
+
+// docs/PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md Section 16 — the exact
+// action-type list. NO_ACTION is first-class, not an absence of a row.
+export const growthRecommendationActionTypeEnum = pgEnum("growth_recommendation_action_type", [
+  "INVESTIGATE_OPPORTUNITY",
+  "CREATE_CAMPAIGN",
+  "REVISE_POSITIONING",
+  "SHIFT_CHANNEL_PRIORITY",
+  "PAUSE_LOW_VALUE_PLAN",
+  "INCREASE_BUDGET_REQUEST",
+  "REDUCE_BUDGET_REQUEST",
+  "RUN_EXPERIMENT",
+  "IMPROVE_ONBOARDING",
+  "RECOVER_JOURNEY",
+  "UPSELL_SEGMENT",
+  "REENGAGE_SEGMENT",
+  "REVIEW_MODEL",
+  "REDUCE_AI_COST",
+  "NO_ACTION",
+]);
+
+export const growthRecommendationStatusEnum = pgEnum("growth_recommendation_status", [
+  "PROPOSED",
+  "NEEDS_REVIEW",
+  "APPROVED",
+  "REJECTED",
+  "ACTIONED",
+  "EXPIRED",
+  "SUPERSEDED",
+]);
+
+export const modelRecommendationStatusEnum = pgEnum("model_recommendation_status", [
+  "PROPOSED",
+  "APPROVED",
+  "REJECTED",
+  "APPLIED",
+  "EXPIRED",
+]);
+
+export const budgetPolicyScopeEnum = pgEnum("budget_policy_scope", [
+  "GLOBAL",
+  "PROVIDER",
+  "MODEL",
+  "TASK_TYPE",
+  "USER",
+]);
+
+export const budgetPeriodEnum = pgEnum("budget_period", ["DAILY", "MONTHLY"]);
+
+export const retentionActionEnum = pgEnum("retention_action", [
+  "REVIEWED",
+  "ANONYMIZED",
+  "PURGE_BLOCKED_LEGAL_HOLD",
+]);
+
+// docs/PHASE_5_EXPERIMENTS_AND_LEARNING.md Section 10-12. Each variant
+// links to the real Phase 3 distribution plan that served it
+// (experimentVariants.distributionPlanId) — evaluation reads real
+// touchpoint/conversion history through that link rather than inventing a
+// parallel variant-assignment/tracking system.
+export const experiments = pgTable("experiments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  hypothesis: text("hypothesis").notNull(),
+  campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+  opportunityId: uuid("opportunity_id").references(() => opportunities.id, { onDelete: "set null" }),
+  audienceSegmentId: uuid("audience_segment_id").references(() => audienceSegments.id, { onDelete: "set null" }),
+  channel: channelTypeEnum("channel"),
+  // Structured link when the primary metric maps onto a real conversion
+  // type; primaryMetric always carries the human-readable label regardless
+  // (e.g. "first meaningful SecurePay use", not just clicks — Section 11).
+  primaryMetricType: conversionTypeEnum("primary_metric_type"),
+  primaryMetric: text("primary_metric").notNull(),
+  secondaryMetrics: jsonb("secondary_metrics").$type<string[]>().notNull().default([]),
+  expectedOutcome: text("expected_outcome").notNull(),
+  startDate: timestamp("start_date", { withTimezone: true }),
+  endDate: timestamp("end_date", { withTimezone: true }),
+  status: experimentStatusEnum("status").notNull().default("DRAFT"),
+  result: text("result"),
+  interpretation: text("interpretation"),
+  confidence: evidenceConfidenceEnum("confidence").notNull().default("INSUFFICIENT_DATA"),
+  // Plain uuid, not a DB foreign key — experiment_variants references this
+  // table, so a reverse FK here would be circular. Validated at the
+  // application layer (src/lib/experiments/evaluation.ts).
+  winnerVariantId: uuid("winner_variant_id"),
+  classification: classificationEnum("classification").notNull().default("CONFIDENTIAL"),
+  isDemo: boolean("is_demo").notNull().default(false),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const experimentVariants = pgTable("experiment_variants", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  experimentId: uuid("experiment_id")
+    .notNull()
+    .references(() => experiments.id, { onDelete: "cascade" }),
+  variantLabel: text("variant_label").notNull(), // e.g. "A"
+  isControl: boolean("is_control").notNull().default(false),
+  messagingAngle: text("messaging_angle").notNull(),
+  creativeVariantId: uuid("creative_variant_id").references(() => creativeVariants.id, { onDelete: "set null" }),
+  cta: text("cta").notNull(),
+  distributionPlanId: uuid("distribution_plan_id").references(() => distributionPlans.id, { onDelete: "set null" }),
+  description: text("description"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Append-only evaluation snapshots — re-evaluating an experiment inserts a
+// fresh row rather than overwriting, same non-destructive pattern as
+// audience_scores/channel_recommendations. perVariant is a small,
+// queryable-enough JSON array (sample counts, conversion rates, absolute/
+// relative difference vs control) — Section 12 explicitly forbids an
+// advanced statistical platform, so this stays a flat snapshot, not a
+// star schema.
+export const experimentResults = pgTable("experiment_results", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  experimentId: uuid("experiment_id")
+    .notNull()
+    .references(() => experiments.id, { onDelete: "cascade" }),
+  computedAt: timestamp("computed_at", { withTimezone: true }).notNull().defaultNow(),
+  perVariant: jsonb("per_variant").$type<
+    Array<{
+      variantId: string;
+      label: string;
+      sampleCount: number;
+      primaryMetricCount: number;
+      conversionRate: number;
+      absoluteDifference: number | null;
+      relativeDifference: number | null;
+    }>
+  >()
+    .notNull()
+    .default([]),
+  winnerVariantId: uuid("winner_variant_id"),
+  confidence: evidenceConfidenceEnum("confidence").notNull(),
+  interpretation: text("interpretation").notNull(),
+  evaluationEngineVersion: text("evaluation_engine_version").notNull(),
+  aiEnrichmentUsed: boolean("ai_enrichment_used").notNull().default(false),
+  aiUsageRecordId: uuid("ai_usage_record_id").references(() => aiUsageRecords.id, { onDelete: "set null" }),
+  generatedByUserId: uuid("generated_by_user_id").references(() => users.id, { onDelete: "set null" }),
+});
+
+// docs/PHASE_5_EXPERIMENTS_AND_LEARNING.md Section 13 — durable commercial
+// lessons, so the engine never repeatedly relearns the same thing.
+export const commercialLearnings = pgTable("commercial_learnings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceExperimentId: uuid("source_experiment_id").references(() => experiments.id, { onDelete: "set null" }),
+  sourceCampaignId: uuid("source_campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+  sourceOpportunityId: uuid("source_opportunity_id").references(() => opportunities.id, { onDelete: "set null" }),
+  observation: text("observation").notNull(),
+  conclusion: text("conclusion").notNull(),
+  evidence: jsonb("evidence").$type<Record<string, unknown>>().notNull().default({}),
+  confidence: evidenceConfidenceEnum("confidence").notNull(),
+  applicableAudienceSegmentId: uuid("applicable_audience_segment_id").references(() => audienceSegments.id, {
+    onDelete: "set null",
+  }),
+  applicableSector: text("applicable_sector"),
+  applicableChannel: channelTypeEnum("applicable_channel"),
+  applicableProduct: text("applicable_product"),
+  learnedAt: timestamp("learned_at", { withTimezone: true }).notNull().defaultNow(),
+  reviewAfter: timestamp("review_after", { withTimezone: true }),
+  status: learningStatusEnum("status").notNull().default("ACTIVE"),
+  // Plain uuid, not a DB foreign key, for the same self-reference-during-
+  // definition reason as audienceProfiles.mergedIntoProfileId (Phase 4).
+  supersededByLearningId: uuid("superseded_by_learning_id"),
+  classification: classificationEnum("classification").notNull().default("CONFIDENTIAL"),
+  isDemo: boolean("is_demo").notNull().default(false),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// docs/PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md Sections 14-18. evidence/
+// supportingMetrics/rankingExplanation carry aggregated/minimized facts
+// only — RESTRICTED underlying evidence (e.g. a specific profile) is
+// referenced by id, never duplicated in as raw PII (Section 42).
+export const growthRecommendations = pgTable("growth_recommendations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: text("title").notNull(),
+  actionType: growthRecommendationActionTypeEnum("action_type").notNull(),
+  priority: urgencyEnum("priority").notNull().default("MEDIUM"),
+  expectedImpact: text("expected_impact").notNull(),
+  evidence: jsonb("evidence").$type<Record<string, unknown>>().notNull().default({}),
+  supportingMetrics: jsonb("supporting_metrics").$type<Record<string, unknown>>().notNull().default({}),
+  affectedPillars: jsonb("affected_pillars").$type<string[]>().notNull().default([]),
+  campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+  audienceSegmentId: uuid("audience_segment_id").references(() => audienceSegments.id, { onDelete: "set null" }),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "set null" }),
+  experimentId: uuid("experiment_id").references(() => experiments.id, { onDelete: "set null" }),
+  learningId: uuid("learning_id").references(() => commercialLearnings.id, { onDelete: "set null" }),
+  productReference: text("product_reference"),
+  reason: text("reason").notNull(),
+  confidence: evidenceConfidenceEnum("confidence").notNull(),
+  riskLevel: riskLevelEnum("risk_level").notNull().default("LOW"),
+  costImplication: text("cost_implication"),
+  humanApprovalRequired: boolean("human_approval_required").notNull().default(true),
+  status: growthRecommendationStatusEnum("status").notNull().default("PROPOSED"),
+  generatedBy: text("generated_by").notNull().default("deterministic-engine"),
+  aiEnrichmentUsed: boolean("ai_enrichment_used").notNull().default(false),
+  aiUsageRecordId: uuid("ai_usage_record_id").references(() => aiUsageRecords.id, { onDelete: "set null" }),
+  rankingScore: numeric("ranking_score", { precision: 6, scale: 2 }),
+  rankingExplanation: jsonb("ranking_explanation").$type<Record<string, unknown>>().notNull().default({}),
+  actionReferenceType: text("action_reference_type"),
+  actionReferenceId: uuid("action_reference_id"),
+  reviewedByUserId: uuid("reviewed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewNotes: text("review_notes"),
+  classification: classificationEnum("classification").notNull().default("CONFIDENTIAL"),
+  isDemo: boolean("is_demo").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// docs/PHASE_5_MODEL_PERFORMANCE_AND_COST.md Section 23. Aggregated
+// snapshots computed from real ai_usage_records history — append-only,
+// current = latest row per (providerId, modelId, taskType, isBenchmark).
+export const modelPerformance = pgTable("model_performance", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  providerId: uuid("provider_id")
+    .notNull()
+    .references(() => aiProviders.id, { onDelete: "cascade" }),
+  modelId: uuid("model_id")
+    .notNull()
+    .references(() => aiModels.id, { onDelete: "cascade" }),
+  taskType: text("task_type").notNull(),
+  sampleCount: integer("sample_count").notNull(),
+  successRate: numeric("success_rate", { precision: 5, scale: 4 }).notNull(),
+  schemaValidRate: numeric("schema_valid_rate", { precision: 5, scale: 4 }),
+  humanAcceptanceRate: numeric("human_acceptance_rate", { precision: 5, scale: 4 }),
+  revisionRate: numeric("revision_rate", { precision: 5, scale: 4 }),
+  avgLatencyMs: numeric("avg_latency_ms", { precision: 10, scale: 2 }),
+  avgCostUsd: numeric("avg_cost_usd", { precision: 10, scale: 5 }),
+  fallbackRate: numeric("fallback_rate", { precision: 5, scale: 4 }).notNull(),
+  evaluationWindowStart: timestamp("evaluation_window_start", { withTimezone: true }).notNull(),
+  evaluationWindowEnd: timestamp("evaluation_window_end", { withTimezone: true }).notNull(),
+  confidence: evidenceConfidenceEnum("confidence").notNull(),
+  isBenchmark: boolean("is_benchmark").notNull().default(false),
+  computedAt: timestamp("computed_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const modelRecommendations = pgTable("model_recommendations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskType: text("task_type").notNull(),
+  fromProviderId: uuid("from_provider_id").references(() => aiProviders.id, { onDelete: "set null" }),
+  fromModelId: uuid("from_model_id").references(() => aiModels.id, { onDelete: "set null" }),
+  toProviderId: uuid("to_provider_id")
+    .notNull()
+    .references(() => aiProviders.id, { onDelete: "restrict" }),
+  toModelId: uuid("to_model_id")
+    .notNull()
+    .references(() => aiModels.id, { onDelete: "restrict" }),
+  reason: text("reason").notNull(),
+  supportingMetrics: jsonb("supporting_metrics").$type<Record<string, unknown>>().notNull().default({}),
+  status: modelRecommendationStatusEnum("status").notNull().default("PROPOSED"),
+  reviewedByUserId: uuid("reviewed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+});
+
+// docs/PHASE_5_MODEL_PERFORMANCE_AND_COST.md Section 28. "Current" policy
+// per (scope, scopeRef, periodType) is the latest `active: true` row —
+// superseding an old policy sets active: false rather than deleting it,
+// same append-oriented discipline as budget_approvals (Phase 3).
+export const aiBudgetPolicies = pgTable("ai_budget_policies", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  scope: budgetPolicyScopeEnum("scope").notNull(),
+  scopeRef: text("scope_ref"), // providerId/modelId/taskType/userId as text; null for GLOBAL
+  periodType: budgetPeriodEnum("period_type").notNull(),
+  softLimitUsd: numeric("soft_limit_usd", { precision: 10, scale: 2 }),
+  hardLimitUsd: numeric("hard_limit_usd", { precision: 10, scale: 2 }),
+  active: boolean("active").notNull().default(true),
+  notes: text("notes"),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// docs/PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md Section 32 — minimal
+// retention review closure. Append-only audit of every review/anonymize
+// decision; never a silent delete.
+export const retentionActions = pgTable("retention_actions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: uuid("profile_id")
+    .notNull()
+    .references(() => audienceProfiles.id, { onDelete: "cascade" }),
+  action: retentionActionEnum("action").notNull(),
+  reason: text("reason").notNull(),
+  performedByUserId: uuid("performed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type AiProvider = typeof aiProviders.$inferSelect;
@@ -1258,3 +1600,12 @@ export type ConversionEvent = typeof conversionEvents.$inferSelect;
 export type AttributionRecord = typeof attributionRecords.$inferSelect;
 export type NextBestAction = typeof nextBestActions.$inferSelect;
 export type RetargetingEligibility = typeof retargetingEligibility.$inferSelect;
+export type Experiment = typeof experiments.$inferSelect;
+export type ExperimentVariant = typeof experimentVariants.$inferSelect;
+export type ExperimentResult = typeof experimentResults.$inferSelect;
+export type CommercialLearning = typeof commercialLearnings.$inferSelect;
+export type GrowthRecommendation = typeof growthRecommendations.$inferSelect;
+export type ModelPerformance = typeof modelPerformance.$inferSelect;
+export type ModelRecommendation = typeof modelRecommendations.$inferSelect;
+export type AiBudgetPolicy = typeof aiBudgetPolicies.$inferSelect;
+export type RetentionAction = typeof retentionActions.$inferSelect;

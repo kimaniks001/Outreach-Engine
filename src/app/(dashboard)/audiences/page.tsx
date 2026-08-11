@@ -10,10 +10,12 @@ import { NewAudienceForm } from "@/components/audience/NewAudienceForm";
 import { listProfiles, sanitizeProfileForRole } from "@/lib/commercial-memory/profiles";
 import { listOrganizations } from "@/lib/commercial-memory/organizations";
 import { listJourneys } from "@/lib/journeys/journeys";
+import { listRetentionReviewCandidates } from "@/lib/commercial-memory/retention";
+import { ActionButton } from "@/components/ui/ActionButton";
 import { db, schema } from "@/lib/db";
 import { desc } from "drizzle-orm";
 
-const TABS = ["segments", "profiles", "organizations", "journeys", "suppression", "attribution"] as const;
+const TABS = ["segments", "profiles", "organizations", "journeys", "suppression", "attribution", "retention"] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABELS: Record<Tab, string> = {
   segments: "Segments",
@@ -22,6 +24,7 @@ const TAB_LABELS: Record<Tab, string> = {
   journeys: "Journeys",
   suppression: "Suppression",
   attribution: "Attribution",
+  retention: "Retention",
 };
 
 export default async function AudiencesPage({
@@ -50,7 +53,7 @@ export default async function AudiencesPage({
       </header>
 
       <div className="flex flex-wrap gap-1.5">
-        {TABS.map((t) => (
+        {TABS.filter((t) => t !== "retention" || user.role === "OWNER").map((t) => (
           <Link
             key={t}
             href={`/audiences?tab=${t}`}
@@ -69,7 +72,73 @@ export default async function AudiencesPage({
       {tab === "journeys" ? <JourneysTab /> : null}
       {tab === "suppression" ? <SuppressionTab /> : null}
       {tab === "attribution" ? <AttributionTab /> : null}
+      {tab === "retention" && user.role === "OWNER" ? <RetentionTab /> : null}
     </div>
+  );
+}
+
+async function RetentionTab() {
+  const candidates = await listRetentionReviewCandidates();
+
+  return (
+    <Card title="Retention review">
+      <p className="mb-4 text-sm text-ink-muted">
+        Only profiles with an explicit retentionUntil in the past are eligible — nothing is
+        auto-eligible just by being old. legalHold always blocks anonymization. Anonymizing clears
+        RESTRICTED identifiers but preserves lifecycle/touchpoint/conversion aggregates. Every action
+        is audited; nothing is silently deleted.
+      </p>
+      {candidates.length === 0 ? (
+        <p className="text-sm text-ink-muted">No profiles are currently due for retention review.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-surface-border text-ink-faint">
+                <th className="py-2 pr-4 font-medium">Profile</th>
+                <th className="py-2 pr-4 font-medium">Lifecycle</th>
+                <th className="py-2 pr-4 font-medium">Retention until</th>
+                <th className="py-2 pr-4 font-medium">Legal hold</th>
+                <th className="py-2 pr-4 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {candidates.map((c) => (
+                <tr key={c.profileId} className="border-b border-surface-border/60">
+                  <td className="py-2 pr-4 text-ink">
+                    <Link href={`/audiences/profiles/${c.profileId}`} className="hover:text-brand">{c.profileId.slice(0, 8)}</Link>
+                  </td>
+                  <td className="py-2 pr-4 text-ink-muted">{c.lifecycleState}</td>
+                  <td className="py-2 pr-4 text-ink-muted">{c.retentionUntil.toLocaleDateString()}</td>
+                  <td className="py-2 pr-4">
+                    <Badge tone={c.legalHold ? "warn" : "neutral"}>{c.legalHold ? "Held" : "None"}</Badge>
+                  </td>
+                  <td className="py-2 pr-4">
+                    <div className="flex gap-2">
+                      <ActionButton
+                        url={`/api/retention/${c.profileId}/review`}
+                        body={{ reason: "Reviewed via Audiences → Retention" }}
+                        label="Mark reviewed"
+                        tone="neutral"
+                      />
+                      {!c.legalHold ? (
+                        <ActionButton
+                          url={`/api/retention/${c.profileId}/anonymize`}
+                          body={{ reason: "Anonymized via Audiences → Retention" }}
+                          label="Anonymize"
+                          tone="bad"
+                          confirmMessage="This clears RESTRICTED identifiers for this profile. Aggregates are preserved. Continue?"
+                        />
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }
 

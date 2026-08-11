@@ -9,6 +9,8 @@ import { getCampaign, listApprovalHistory, listBrandReviews } from "@/lib/campai
 import { listVariantsForCampaign } from "@/lib/creative/variants";
 import { VariantCard } from "@/components/campaigns/VariantCard";
 import { RunBrandGuardianButton, CampaignReviewButtons, GenerateVariantsButton } from "@/components/campaigns/CampaignActions";
+import { NewExperimentForm } from "@/components/experiments/NewExperimentForm";
+import { listExperiments } from "@/lib/experiments/experiments";
 
 export default async function CampaignDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireSection("CAMPAIGNS");
@@ -20,10 +22,11 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
   const campaign = await getCampaign(id);
   if (!campaign) notFound();
 
-  const [variants, approvalHistory, brandReviews] = await Promise.all([
+  const [variants, approvalHistory, brandReviews, experiments] = await Promise.all([
     listVariantsForCampaign(id),
     listApprovalHistory("campaign", id),
     listBrandReviews("campaign", id),
+    listExperiments({ campaignId: id }),
   ]);
 
   const canEdit = can(user.role, "edit", "campaigns");
@@ -128,6 +131,24 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
           </ul>
         </Card>
       ) : null}
+
+      <Card title={`Experiments (${experiments.length})`} action={canEdit ? <NewExperimentForm campaignId={campaign.id} /> : undefined}>
+        {experiments.length === 0 ? (
+          <p className="text-sm text-ink-muted">
+            No experiments yet — compare messaging/creative variants against real SecurePay behavior,
+            not just clicks.
+          </p>
+        ) : (
+          <ul className="space-y-2 text-sm">
+            {experiments.map((e) => (
+              <li key={e.id} className="flex items-center justify-between border-b border-surface-border/60 pb-2 last:border-0">
+                <Link href={`/campaigns/experiments/${e.id}`} className="text-ink hover:text-brand">{e.name}</Link>
+                <Badge tone={e.status === "COMPLETED" ? "good" : e.status === "CANCELLED" || e.status === "INCONCLUSIVE" ? "bad" : "neutral"}>{e.status}</Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   );
 }

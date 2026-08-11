@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: Phase 4 (Audience Memory, Attribution & Conversion) — IN PROGRESS
+Status: Phase 0–5 COMPLETE — final planned phase closed
 Last updated: 2026-08-11
 
 ## 1. Principle
@@ -54,7 +54,7 @@ Section 5,
 [PHASE_3_TARGETING_AND_DISTRIBUTION.md](PHASE_3_TARGETING_AND_DISTRIBUTION.md),
 and [PHASE_3_COMPLETION_REPORT.md](PHASE_3_COMPLETION_REPORT.md) for status.
 
-### PHASE 4 — Audience Memory, Attribution & Conversion (current)
+### PHASE 4 — Audience Memory, Attribution & Conversion (complete)
 
 Commercial memory (Unified Audience Profiles + organizations), deterministic
 identity resolution, the locked audience lifecycle-state engine, centralized
@@ -69,21 +69,32 @@ Sections 2–4,
 [PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md](PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md),
 and [PHASE_4_COMPLETION_REPORT.md](PHASE_4_COMPLETION_REPORT.md) for status.
 
-### PHASE 5 — Impact + Growth Director + Scale
+### PHASE 5 — Impact + Growth Director + Scale (complete — final planned phase)
 
-Analytics, experiments, ROI, Growth Director, model self-check, selective
-automation, optional read-only Analytics API. See
-[ARCHITECTURE.md](ARCHITECTURE.md) Section 6.
+Impact scorecards + never-fabricated ROI/efficiency; real experiments
+evaluated against actual SecurePay behavior with a deterministic winner/
+inconclusive engine; durable Commercial Learning; a hybrid deterministic +
+AI Growth Director producing ranked, evidence-backed, risk-tiered-approval
+recommendations and answering "What should SecurePay do next?"; a model-
+performance/model-recommendation engine with a small benchmark suite; full
+AI cost governance with a Gateway-level circuit-breaker budget guard; a
+minimal audited retention-review/anonymization closure; and a narrow,
+internal, read-only Analytics API. See
+[ARCHITECTURE.md](ARCHITECTURE.md) Section 6,
+[PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md](PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md),
+and [PHASE_5_COMPLETION_REPORT.md](PHASE_5_COMPLETION_REPORT.md) for status.
 
-## 3. Current Phase
+## 3. Roadmap Status
 
-**Phase 0 — Foundation**, **Phase 1 — Command Centre + AI Core**,
-**Phase 2 — Intelligence + Campaign + Creative**, and **Phase 3 —
-Targeting + Distribution** are complete and merged to `main`. **Phase 4 —
-Audience Memory, Attribution & Conversion** is in progress on branch
-`begining-phase-4-audience-memory-attribution-conversion`. Phase 5 has not
-started. See [PHASE_4_COMPLETION_REPORT.md](PHASE_4_COMPLETION_REPORT.md)
-for status and final classification.
+**All six phases — Phase 0 through Phase 5 — are complete.** Phase 5 was
+built on branch
+`begining-phase-5-impact-growth-director-scale`. **This is the final
+planned phase; no Phase 6 exists or is planned.** Future work beyond this
+roadmap is tracked as post-roadmap enhancements (see
+[PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md](PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md)
+Section 12), not new phases. See
+[PHASE_5_COMPLETION_REPORT.md](PHASE_5_COMPLETION_REPORT.md) for final
+status and classification.
 
 ## 4. Explicitly Deferred Integrations
 

@@ -94,23 +94,26 @@ dependencies are added in this phase. Phase 1 is where the recommendation in
 Section 4 gets turned into an actual project skeleton, informed by whatever
 is still true about the team's needs at that time.
 
-## 6. Future Read-Only Analytics API (Not Built Now)
+## 6. Read-Only Analytics API (Built in Phase 5, Internal Scope)
 
-The Outreach Engine may later expose a narrow, read-only Analytics &
-Insights API, separate from SecurePay's own API. Keeping this possible
-without building it now means:
+Phase 0 designed the backend so analytics read-paths (campaign analytics,
+conversion funnels, channels, attribution, audience aggregate analytics,
+impact metrics) stay separated from write/mutation logic and from
+RESTRICTED-classification data (see
+[DATA_CLASSIFICATION.md](DATA_CLASSIFICATION.md)) from day one — no
+route in `src/lib/impact/*` or `src/lib/attribution/*` has a path back to
+doctrine, raw intelligence sources, prompts, credentials, private audience
+profiles, or internal model logic.
 
-- The backend API should be organized so analytics read-paths (campaign
-  analytics, conversion funnels, channels, attribution, audience aggregate
-  analytics, impact metrics) are already separated from write/mutation logic
-  and from RESTRICTED-classification data (see
-  [DATA_CLASSIFICATION.md](DATA_CLASSIFICATION.md)).
-- Anything that must never be exposed by such an API — doctrine, raw
-  intelligence sources, prompts, credentials, private audience profiles,
-  internal model logic — should never be reachable from the same query path
-  as analytics aggregates, even internally.
-- No API is built, versioned, or exposed in Phase 0 or Phase 1. See ADR-007
-  and [ROADMAP.md](ROADMAP.md) Phase 5.
+Phase 5 built on that separation: six narrow, read-only, internal
+(session-authenticated, not externally keyed) routes under
+`/api/analytics/*`. See
+[PHASE_5_ANALYTICS_API.md](PHASE_5_ANALYTICS_API.md) for the exact routes,
+the internal-vs-external boundary decision, and what is never exposed.
+External-client authentication (API keys/OAuth) remains a post-roadmap
+enhancement, not built in Phase 5 — see ADR-007 and
+[PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md](PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md)
+Section 12.
 
 ## 7. Non-Goals for Phase 0
 

@@ -59,7 +59,10 @@ describe("AI Gateway: provider honesty and no bypass", () => {
   it("never falls back to an unapproved/unavailable provider — returns NO_AVAILABLE_MODEL honestly instead", async () => {
     const ownerId = await getOwnerId();
     const result = await AIGateway.execute({
-      taskType: "GROWTH_RECOMMENDATION", // no model approved for this task type in Phase 2 seed data
+      // CONTENT_COPY has never been activated for the mock model (unlike
+      // GROWTH_RECOMMENDATION, which Phase 5 legitimately activates — see
+      // scripts/seed.ts's PHASE_2_TASK_TYPES list).
+      taskType: "CONTENT_COPY",
       correlationId: randomUUID(),
       requestedByUserId: ownerId,
       prompt: { user: "irrelevant" },
