@@ -1,0 +1,1 @@
+ALTER TABLE "distribution_plans" ADD COLUMN "brand_guardian_status" "brand_guardian_status" DEFAULT 'NOT_REVIEWED' NOT NULL;

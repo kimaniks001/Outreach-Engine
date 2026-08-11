@@ -10,6 +10,11 @@ import { listSignalsWithEvidenceCount } from "@/lib/intelligence/signals";
 import { listOpportunities } from "@/lib/intelligence/opportunities";
 import { listCampaigns } from "@/lib/campaigns/campaigns";
 import { listRecentUsage } from "@/lib/ai/usage";
+import { listAudienceSegments } from "@/lib/audience/segments";
+import { listDistributionPlans } from "@/lib/distribution/plans";
+import { listAllExecutions } from "@/lib/distribution/executions";
+import { countApprovedBudgets } from "@/lib/distribution/budget-guard";
+import { countAuditEventsByType } from "@/lib/audit/log";
 
 export default async function TodayPage() {
   const user = await requireSection("TODAY");
@@ -35,20 +40,38 @@ export default async function TodayPage() {
   const canApproveCampaigns = can(user.role, "approve", "campaigns");
   const canSeeUsage = can(user.role, "view", "model-config");
 
-  const [signals, opportunities, campaigns, recentUsage] = await Promise.all([
-    canSeeSignals ? listSignalsWithEvidenceCount() : Promise.resolve([]),
-    canSeeOpportunities
-      ? listOpportunities(intelScope === "approved" ? { status: ["APPROVED"] } : {})
-      : Promise.resolve([]),
-    canSeeCampaigns ? listCampaigns() : Promise.resolve([]),
-    canSeeUsage ? listRecentUsage(5) : Promise.resolve([]),
-  ]);
+  const audienceScope = scopeFor(user.role, "audience");
+  const canSeeAudiences = audienceScope !== "none";
+  const canApproveAudiences = can(user.role, "approve", "audience");
+  const distributionScope = scopeFor(user.role, "distribution");
+  const canSeeDistribution = distributionScope !== "none";
+  const canApproveDistribution = can(user.role, "approve", "distribution");
+  const canSeeAudit = can(user.role, "view", "audit");
+
+  const [signals, opportunities, campaigns, recentUsage, audienceSegments, distributionPlans, executions, approvedBudgets, safeModeBlocks] =
+    await Promise.all([
+      canSeeSignals ? listSignalsWithEvidenceCount() : Promise.resolve([]),
+      canSeeOpportunities
+        ? listOpportunities(intelScope === "approved" ? { status: ["APPROVED"] } : {})
+        : Promise.resolve([]),
+      canSeeCampaigns ? listCampaigns() : Promise.resolve([]),
+      canSeeUsage ? listRecentUsage(5) : Promise.resolve([]),
+      canSeeAudiences ? listAudienceSegments(audienceScope === "approved" ? { status: ["APPROVED"] } : {}) : Promise.resolve([]),
+      canSeeDistribution ? listDistributionPlans() : Promise.resolve([]),
+      canSeeDistribution ? listAllExecutions() : Promise.resolve([]),
+      canSeeDistribution ? countApprovedBudgets() : Promise.resolve(0),
+      canSeeAudit ? countAuditEventsByType("SAFE_MODE_BLOCKED_EXECUTION") : Promise.resolve(0),
+    ]);
 
   const newSignalsCount = signals.filter((s) => s.signal.status === "NEW").length;
   const opportunitiesAwaitingReview = opportunities.filter((o) => o.status === "NEEDS_REVIEW").length;
   const opportunitiesApproved = opportunities.filter((o) => o.status === "APPROVED").length;
   const campaignsAwaitingApproval = campaigns.filter((c) => c.status === "AWAITING_APPROVAL").length;
   const campaignsBlocked = campaigns.filter((c) => c.brandGuardianStatus === "BLOCK" || c.status === "NEEDS_REVISION").length;
+  const campaignsReadyForTargeting = campaigns.filter((c) => c.status === "READY_FOR_DISTRIBUTION").length;
+  const audiencesAwaitingReview = audienceSegments.filter((a) => a.status === "NEEDS_REVIEW").length;
+  const plansAwaitingApproval = distributionPlans.filter((p) => p.status === "AWAITING_APPROVAL").length;
+  const simulatedExecutionsRunning = executions.filter((e) => e.isSimulated && e.status === "RUNNING").length;
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -56,7 +79,7 @@ export default async function TodayPage() {
         <p className="text-xs font-medium uppercase tracking-widest text-ink-faint">Today</p>
         <h1 className="mt-1 text-2xl font-semibold text-ink">Welcome back, {user.name.split(" ")[0]}</h1>
         <p className="mt-1 text-sm text-ink-muted">
-          A snapshot of the Command Centre. Phase 2 — Intelligence + Campaign + Creative.
+          A snapshot of the Command Centre. Phase 3 — Targeting + Distribution.
         </p>
       </header>
 
@@ -89,10 +112,18 @@ export default async function TodayPage() {
               <li>{campaignsAwaitingApproval} campaign(s) awaiting approval.</li>
             ) : null}
             {campaignsBlocked > 0 ? <li>{campaignsBlocked} campaign(s) blocked or needing revision.</li> : null}
+            {canApproveAudiences && audiencesAwaitingReview > 0 ? (
+              <li>{audiencesAwaitingReview} audience segment(s) awaiting review.</li>
+            ) : null}
+            {canApproveDistribution && plansAwaitingApproval > 0 ? (
+              <li>{plansAwaitingApproval} distribution plan(s) awaiting approval.</li>
+            ) : null}
             {!(
               (canApproveOpportunities && opportunitiesAwaitingReview > 0) ||
               (canApproveCampaigns && campaignsAwaitingApproval > 0) ||
-              campaignsBlocked > 0
+              campaignsBlocked > 0 ||
+              (canApproveAudiences && audiencesAwaitingReview > 0) ||
+              (canApproveDistribution && plansAwaitingApproval > 0)
             ) ? (
               <li>Nothing pending for your role right now.</li>
             ) : null}
@@ -137,16 +168,40 @@ export default async function TodayPage() {
                 <span className="text-ink">{campaigns.length}</span>
               </Row>
             ) : null}
-            <Row label="Audience memory">
-              <span className="text-ink-muted">Not active yet</span>
-            </Row>
-            <Row label="Distribution">
-              <span className="text-ink-muted">Not active yet</span>
-            </Row>
+            {canSeeCampaigns ? (
+              <Row label="Campaigns ready for targeting">
+                <span className="text-ink">{campaignsReadyForTargeting}</span>
+              </Row>
+            ) : null}
+            {canSeeAudiences ? (
+              <Row label="Audience segments">
+                <span className="text-ink">{audienceSegments.length}</span>
+              </Row>
+            ) : null}
+            {canSeeDistribution ? (
+              <Row label="Distribution plans">
+                <span className="text-ink">{distributionPlans.length}</span>
+              </Row>
+            ) : null}
+            {canSeeDistribution ? (
+              <Row label="Approved budgets">
+                <span className="text-ink">{approvedBudgets}</span>
+              </Row>
+            ) : null}
+            {canSeeDistribution ? (
+              <Row label="Simulated executions running">
+                <span className="text-ink">{simulatedExecutionsRunning}</span>
+              </Row>
+            ) : null}
+            {canSeeAudit ? (
+              <Row label="Blocked execution attempts (Safe Mode)">
+                <span className="text-ink">{safeModeBlocks}</span>
+              </Row>
+            ) : null}
           </dl>
           <p className="mt-3 text-xs text-ink-faint">
             No figures are fabricated here — rows only appear once your role has visibility into
-            that resource.
+            that resource. All executions above are SIMULATED / NOT LIVE — see Distribution.
           </p>
         </Card>
 
@@ -170,10 +225,10 @@ export default async function TodayPage() {
         ) : null}
 
         <Card title="Next build milestone" className="lg:col-span-2">
-          <p className="text-sm text-ink">Phase 3 — Targeting + Distribution</p>
+          <p className="text-sm text-ink">Phase 4 — Audience Memory, Attribution &amp; Conversion</p>
           <p className="mt-1 text-sm text-ink-muted">
-            Audience targeting, paid media planning, and prospect/business distribution — building
-            on the campaigns approved here.
+            Commercial memory, audience states, attribution, and journey recovery — building on
+            the targeting and distribution plans created here.
           </p>
         </Card>
       </div>

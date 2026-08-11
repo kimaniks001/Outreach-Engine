@@ -1,0 +1,1 @@
+ALTER TYPE "public"."brand_review_subject" ADD VALUE 'distribution_plan';

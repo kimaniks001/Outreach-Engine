@@ -15,6 +15,27 @@
       "when": 1786399721973,
       "tag": "0001_yielding_chamber",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786423434226,
+      "tag": "0002_remarkable_betty_brant",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786424078762,
+      "tag": "0003_shiny_the_hand",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786424130577,
+      "tag": "0004_orange_gauntlet",
+      "breakpoints": true
     }
   ]
 }

@@ -5,7 +5,18 @@ import { randomBytes } from "node:crypto";
 import { db, schema } from "../src/lib/db";
 import { hashPassword } from "../src/lib/auth/password";
 import { ROLES, type Role } from "../src/lib/rbac/roles";
-import { eq, sql } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
+import { createAudienceSegment, reviewAudienceSegment } from "../src/lib/audience/segments";
+import { computeTotalScore } from "../src/lib/audience/scoring";
+import {
+  createDistributionPlan,
+  updateDistributionPlan,
+  runDistributionPlanBrandGuardian,
+  reviewDistributionPlan,
+  markDistributionPlanReady,
+} from "../src/lib/distribution/plans";
+import { proposeBudget, approveBudget } from "../src/lib/distribution/budget-guard";
+import { DistributionGateway } from "../src/lib/distribution/gateway";
 
 // Local development seed only. Never run against a shared or production
 // database — see the Phase 1 brief Section 9 and docs/DATA_CLASSIFICATION.md
@@ -72,13 +83,18 @@ interface ModelSeed {
 }
 
 // Phase 2 task types this build actually wires up an AI task for — see
-// docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md Section 12/13.
+// docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md Section 12/13, extended by
+// docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md Section 9/11. Named
+// PHASE_2_TASK_TYPES for historical continuity with that document; this is
+// now the full set of task types this build wires up an AI task for.
 const PHASE_2_TASK_TYPES = [
   "OPPORTUNITY_CLASSIFICATION",
   "MARKET_RESEARCH",
   "SOURCE_SYNTHESIS",
   "BRAND_REVIEW",
   "CREATIVE_IDEATION",
+  "AUDIENCE_CLASSIFICATION",
+  "CHANNEL_RECOMMENDATION",
 ];
 
 const PROVIDERS: Array<{
@@ -276,6 +292,122 @@ async function seedDemoScenario(ownerUserId: string) {
   });
 }
 
+const DEMO_AUDIENCE_NAME = "Kenyan contractors & clients with milestone-payment needs";
+
+// docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md Section 35. Continues the
+// Phase 2 demo campaign once it exists (seedDemoScenario only seeds the
+// starting signal — a human/Owner walks it through to
+// READY_FOR_DISTRIBUTION via the live UI/API, same precedent as Phase 2).
+// If that hasn't happened yet, this is skipped gracefully — re-run
+// `npm run db:seed` after the Phase 2 walkthrough to pick it up. Every step
+// below calls the real service/gateway functions (not raw inserts for the
+// plan/budget/execution), so the seeded demo state is produced by the
+// actual Phase 3 architecture, not fabricated — see Section 19.
+async function seedPhase3DemoScenario(ownerUserId: string) {
+  const existingAudience = await db
+    .select()
+    .from(schema.audienceSegments)
+    .where(eq(schema.audienceSegments.name, DEMO_AUDIENCE_NAME))
+    .limit(1);
+  if (existingAudience.length > 0) return;
+
+  const [demoCampaign] = await db
+    .select()
+    .from(schema.campaigns)
+    .where(eq(schema.campaigns.isDemo, true))
+    .orderBy(desc(schema.campaigns.createdAt))
+    .limit(1);
+
+  if (!demoCampaign || demoCampaign.status !== "READY_FOR_DISTRIBUTION") {
+    console.log(
+      "\nPhase 3 demo scenario not seeded yet: walk the Phase 2 demo campaign through to READY_FOR_DISTRIBUTION as Owner, then re-run `npm run db:seed`."
+    );
+    return;
+  }
+
+  const segment = await createAudienceSegment(
+    {
+      name: DEMO_AUDIENCE_NAME,
+      description:
+        "DEMO/SAMPLE audience for the construction milestone-payment scenario. Contractors, homeowners, and building clients in Kenya managing milestone-based payments.",
+      linkedCampaignId: demoCampaign.id,
+      sector: "Construction",
+      geography: "Kenya",
+      businessCriteria: "Businesses and individuals engaging contractors for milestone-based project payments.",
+      roleFunctionCriteria: "Contractors, construction project managers, homeowners/building clients.",
+      companyCriteria: "Small to mid-size construction/contracting businesses.",
+      intentCriteria:
+        "Actively managing or paying milestone-based contractor payments; searching for payment-protection solutions.",
+      channelEligibility: ["GOOGLE_SEARCH", "META_FACEBOOK", "LINKEDIN", "WHATSAPP"],
+      estimatedReach: "Illustrative demo estimate only — not a real market sizing figure.",
+    },
+    ownerUserId
+  );
+
+  // Manually set, not AI-proposed — deliberately conservative on
+  // evidenceStrength since no real market evidence backs this demo score,
+  // matching the honest MANUAL/UNVERIFIED discipline the Phase 2 demo
+  // signal established.
+  await db.insert(schema.audienceScores).values({
+    audienceSegmentId: segment.id,
+    problemFit: 80,
+    productFit: 75,
+    intent: 78,
+    reachability: 65,
+    commercialValue: 70,
+    evidenceStrength: 30,
+    channelFit: 72,
+    totalScore: computeTotalScore({
+      problemFit: 80,
+      productFit: 75,
+      intent: 78,
+      reachability: 65,
+      commercialValue: 70,
+      evidenceStrength: 30,
+      channelFit: 72,
+    }),
+    explanation: {
+      evidenceStrength: "DEMO/SAMPLE — manually set, deliberately conservative; no real market evidence backs this figure.",
+      intentCriteria: "High commercial intent inferred from the milestone-payment problem framing, not measured.",
+    },
+    aiProposed: false,
+    scoredByUserId: ownerUserId,
+  });
+
+  await reviewAudienceSegment(segment.id, "APPROVE", ownerUserId, "DEMO — approved for local walkthrough.");
+
+  const plan = await createDistributionPlan(
+    {
+      campaignId: demoCampaign.id,
+      audienceSegmentId: segment.id,
+      objective: "Drive qualified interest for milestone-payment protection among contractors and clients in Kenya.",
+      channel: "GOOGLE_SEARCH",
+      channelStrategy:
+        "High-intent Google Search campaign targeting milestone-payment and contractor-payment-protection queries in Kenya. Agree on the milestone. Let the money follow.",
+      destination: "SecurePay demo / KeyContract explainer page",
+      cta: "See how it works",
+      plannedBudget: 50,
+      budgetCurrency: "KES",
+    },
+    ownerUserId
+  );
+
+  await updateDistributionPlan(plan.id, { executionMode: "SIMULATED" });
+  await proposeBudget(
+    { distributionPlanId: plan.id, plannedBudget: 50, currency: "KES", dailyCap: 10, totalCap: 50 },
+    ownerUserId
+  );
+  await approveBudget(plan.id, ownerUserId);
+  await runDistributionPlanBrandGuardian(plan.id, ownerUserId);
+  await reviewDistributionPlan(plan.id, "APPROVE", ownerUserId, "DEMO — approved for local walkthrough.");
+  await markDistributionPlanReady(plan.id, ownerUserId);
+
+  const launchOutcome = await DistributionGateway.launch(plan.id, ownerUserId);
+  if (launchOutcome.outcome !== "LAUNCHED") {
+    console.log(`\nPhase 3 demo: plan created but simulated launch did not complete (${launchOutcome.outcome}).`);
+  }
+}
+
 async function main() {
   console.log("Seeding Outreach Engine development data...\n");
 
@@ -287,6 +419,7 @@ async function main() {
 
   const [owner] = await db.select().from(schema.users).where(eq(schema.users.email, "owner@dev.local")).limit(1);
   if (owner) await seedDemoScenario(owner.id);
+  if (owner) await seedPhase3DemoScenario(owner.id);
 
   console.log("Development accounts created (passwords shown once, not stored anywhere):\n");
   for (const cred of credentials) {

@@ -433,6 +433,7 @@ export const creativeVariants = pgTable("creative_variants", {
 export const brandReviewSubjectEnum = pgEnum("brand_review_subject", [
   "campaign",
   "creative_variant",
+  "distribution_plan",
 ]);
 
 // docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md Section 13. subjectId is
@@ -459,7 +460,12 @@ export const brandReviews = pgTable("brand_reviews", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const approvalSubjectEnum = pgEnum("approval_subject", ["opportunity", "campaign"]);
+export const approvalSubjectEnum = pgEnum("approval_subject", [
+  "opportunity",
+  "campaign",
+  "audience_segment",
+  "distribution_plan",
+]);
 export const approvalActionEnum = pgEnum("approval_action", [
   "APPROVE",
   "REJECT",
@@ -481,6 +487,260 @@ export const approvalEvents = pgTable("approval_events", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ============================================================
+// PHASE 3 — Targeting + Distribution
+// ============================================================
+
+// docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md Section 10 — planning/channel
+// types only. Actual live adapter support is separate (src/lib/distribution)
+// and, in this phase, limited to the SIMULATED adapter — see that document.
+export const channelTypeEnum = pgEnum("channel_type", [
+  "GOOGLE_SEARCH",
+  "GOOGLE_DISPLAY",
+  "YOUTUBE",
+  "META_FACEBOOK",
+  "META_INSTAGRAM",
+  "TIKTOK",
+  "LINKEDIN",
+  "X",
+  "DIRECT_BUSINESS_OUTREACH",
+  "EMAIL",
+  "WHATSAPP",
+  "IN_APP",
+  "PARTNER_PLATFORM",
+]);
+
+export const audienceSegmentStatusEnum = pgEnum("audience_segment_status", [
+  "DRAFT",
+  "NEEDS_REVIEW",
+  "APPROVED",
+  "REJECTED",
+  "ARCHIVED",
+]);
+
+// docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md Section 13 — LIVE is structurally
+// unreachable in this phase: no adapter exists that can serve it. Default is
+// always PLAN_ONLY.
+export const executionModeEnum = pgEnum("execution_mode", [
+  "PLAN_ONLY",
+  "SIMULATED",
+  "SANDBOX",
+  "LIVE",
+]);
+
+export const distributionPlanStatusEnum = pgEnum("distribution_plan_status", [
+  "DRAFT",
+  "NEEDS_REVIEW",
+  "AWAITING_APPROVAL",
+  "APPROVED",
+  "READY",
+  "RUNNING",
+  "PAUSED",
+  "COMPLETED",
+  "FAILED",
+  "CANCELLED",
+]);
+
+export const distributionExecutionStatusEnum = pgEnum("distribution_execution_status", [
+  "PENDING",
+  "RUNNING",
+  "PAUSED",
+  "COMPLETED",
+  "FAILED",
+  "CANCELLED",
+]);
+
+// Append-only per distribution plan — the current effective budget is the
+// latest APPROVED row not superseded by a later PROPOSED row. See
+// src/lib/distribution/budget-guard.ts.
+export const budgetApprovalStatusEnum = pgEnum("budget_approval_status", [
+  "PROPOSED",
+  "APPROVED",
+  "REJECTED",
+  "SUPERSEDED",
+]);
+
+// docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md Section 7 — targeting commercial
+// situations and intent only. AI proposals are re-validated server-side by
+// src/lib/audience/targeting-guard.ts before being written, regardless of
+// what a model proposed.
+export const audienceSegments = pgTable("audience_segments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  linkedCampaignId: uuid("linked_campaign_id")
+    .notNull()
+    .references(() => campaigns.id, { onDelete: "restrict" }),
+  sector: text("sector"),
+  geography: text("geography"),
+  businessCriteria: text("business_criteria"),
+  roleFunctionCriteria: text("role_function_criteria"),
+  companyCriteria: text("company_criteria"),
+  intentCriteria: text("intent_criteria"),
+  channelEligibility: jsonb("channel_eligibility").$type<string[]>().notNull().default([]),
+  // Free text on purpose — a placeholder or a known value, never a
+  // fabricated number. See docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md
+  // Section 7.
+  estimatedReach: text("estimated_reach"),
+  status: audienceSegmentStatusEnum("status").notNull().default("DRAFT"),
+  classification: classificationEnum("classification").notNull().default("CONFIDENTIAL"),
+  isDemo: boolean("is_demo").notNull().default(false),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md Section 8 — mirrors
+// opportunity_scores exactly: transparent, explainable, no ML. One current
+// row per segment; re-scoring overwrites via upsert, same as opportunities.
+export const audienceScores = pgTable(
+  "audience_scores",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    audienceSegmentId: uuid("audience_segment_id")
+      .notNull()
+      .references(() => audienceSegments.id, { onDelete: "cascade" }),
+    problemFit: integer("problem_fit").notNull(),
+    productFit: integer("product_fit").notNull(),
+    intent: integer("intent").notNull(),
+    reachability: integer("reachability").notNull(),
+    commercialValue: integer("commercial_value").notNull(),
+    evidenceStrength: integer("evidence_strength").notNull(),
+    channelFit: integer("channel_fit"),
+    totalScore: integer("total_score").notNull(),
+    explanation: jsonb("explanation").$type<Record<string, string>>().notNull().default({}),
+    aiProposed: boolean("ai_proposed").notNull().default(false),
+    scoredByUserId: uuid("scored_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    audienceSegmentIdx: uniqueIndex("audience_scores_segment_idx").on(table.audienceSegmentId),
+  })
+);
+
+// docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md Section 11 — deterministic rule
+// engine output. Append-only (re-running generates a fresh set, same
+// non-destructive pattern as brand_reviews) so recommendation history is
+// preserved.
+export const channelRecommendations = pgTable("channel_recommendations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  campaignId: uuid("campaign_id")
+    .notNull()
+    .references(() => campaigns.id, { onDelete: "cascade" }),
+  audienceSegmentId: uuid("audience_segment_id")
+    .notNull()
+    .references(() => audienceSegments.id, { onDelete: "cascade" }),
+  channel: channelTypeEnum("channel").notNull(),
+  priority: integer("priority").notNull(),
+  rationale: text("rationale").notNull(),
+  expectedFunnelRole: text("expected_funnel_role").notNull(),
+  risks: jsonb("risks").$type<string[]>().notNull().default([]),
+  requiredAssets: jsonb("required_assets").$type<string[]>().notNull().default([]),
+  executionAvailability: text("execution_availability").notNull(),
+  ruleEngineVersion: text("rule_engine_version").notNull(),
+  aiEnrichmentUsed: boolean("ai_enrichment_used").notNull().default(false),
+  aiUsageRecordId: uuid("ai_usage_record_id").references(() => aiUsageRecords.id, {
+    onDelete: "set null",
+  }),
+  generatedByUserId: uuid("generated_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md Section 12. Default execution
+// mode is always PLAN_ONLY; RUNNING is only reachable via a successful
+// DistributionGateway.launch() call — see src/lib/distribution/plans.ts.
+export const distributionPlans = pgTable("distribution_plans", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  campaignId: uuid("campaign_id")
+    .notNull()
+    .references(() => campaigns.id, { onDelete: "restrict" }),
+  audienceSegmentId: uuid("audience_segment_id")
+    .notNull()
+    .references(() => audienceSegments.id, { onDelete: "restrict" }),
+  objective: text("objective").notNull(),
+  channel: channelTypeEnum("channel").notNull(),
+  channelStrategy: text("channel_strategy").notNull(),
+  creativeVariantIds: jsonb("creative_variant_ids").$type<string[]>().notNull().default([]),
+  destination: text("destination"),
+  cta: text("cta").notNull(),
+  plannedBudget: numeric("planned_budget", { precision: 12, scale: 2 }),
+  budgetCurrency: text("budget_currency").notNull().default("USD"),
+  startDate: timestamp("start_date", { withTimezone: true }),
+  endDate: timestamp("end_date", { withTimezone: true }),
+  executionMode: executionModeEnum("execution_mode").notNull().default("PLAN_ONLY"),
+  riskLevel: riskLevelEnum("risk_level").notNull().default("HIGH"), // paid/outbound distribution is HIGH risk by default — docs/AI_GOVERNANCE.md Section 4
+  brandGuardianStatus: brandGuardianStatusEnum("brand_guardian_status").notNull().default("NOT_REVIEWED"),
+  providerAccountReference: text("provider_account_reference"),
+  status: distributionPlanStatusEnum("status").notNull().default("DRAFT"),
+  isDemo: boolean("is_demo").notNull().default(false),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md Section 15 — append-only history
+// per plan, mirroring approval_events' philosophy. The current effective
+// budget is the latest APPROVED row not superseded by a later row — see
+// src/lib/distribution/budget-guard.ts. No row here is ever edited in place.
+export const budgetApprovals = pgTable("budget_approvals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  distributionPlanId: uuid("distribution_plan_id")
+    .notNull()
+    .references(() => distributionPlans.id, { onDelete: "cascade" }),
+  plannedBudget: numeric("planned_budget", { precision: 12, scale: 2 }).notNull(),
+  approvedBudget: numeric("approved_budget", { precision: 12, scale: 2 }),
+  currency: text("currency").notNull().default("USD"),
+  dailyCap: numeric("daily_cap", { precision: 12, scale: 2 }),
+  totalCap: numeric("total_cap", { precision: 12, scale: 2 }),
+  status: budgetApprovalStatusEnum("status").notNull().default("PROPOSED"),
+  providerAccountReference: text("provider_account_reference"),
+  proposedByUserId: uuid("proposed_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  approvedByUserId: uuid("approved_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md Section 27. isSimulated defaults
+// true because the only adapter implemented in this phase is SIMULATED — see
+// src/lib/distribution/adapters. externalExecutionId/reportedSpend are only
+// ever populated by an adapter call, never fabricated by application code.
+export const distributionExecutions = pgTable("distribution_executions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  distributionPlanId: uuid("distribution_plan_id")
+    .notNull()
+    .references(() => distributionPlans.id, { onDelete: "restrict" }),
+  channel: channelTypeEnum("channel").notNull(),
+  adapterKey: text("adapter_key").notNull(),
+  mode: executionModeEnum("mode").notNull(),
+  externalExecutionId: text("external_execution_id"),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  stoppedAt: timestamp("stopped_at", { withTimezone: true }),
+  status: distributionExecutionStatusEnum("status").notNull().default("PENDING"),
+  errorCode: text("error_code"),
+  normalizedError: text("normalized_error"),
+  approvedBudget: numeric("approved_budget", { precision: 12, scale: 2 }),
+  reportedSpend: numeric("reported_spend", { precision: 12, scale: 2 }),
+  spendHistory: jsonb("spend_history").$type<Array<{ at: string; amount: number }>>().notNull().default([]),
+  isSimulated: boolean("is_simulated").notNull().default(true),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type AiProvider = typeof aiProviders.$inferSelect;
@@ -496,3 +756,9 @@ export type Campaign = typeof campaigns.$inferSelect;
 export type CreativeVariant = typeof creativeVariants.$inferSelect;
 export type BrandReview = typeof brandReviews.$inferSelect;
 export type ApprovalEvent = typeof approvalEvents.$inferSelect;
+export type AudienceSegment = typeof audienceSegments.$inferSelect;
+export type AudienceScore = typeof audienceScores.$inferSelect;
+export type ChannelRecommendation = typeof channelRecommendations.$inferSelect;
+export type DistributionPlan = typeof distributionPlans.$inferSelect;
+export type BudgetApproval = typeof budgetApprovals.$inferSelect;
+export type DistributionExecution = typeof distributionExecutions.$inferSelect;
