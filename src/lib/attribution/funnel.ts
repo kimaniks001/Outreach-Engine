@@ -7,6 +7,14 @@ import { db, schema } from "@/lib/db";
 // attribution weighting lives in src/lib/attribution/engine.ts and answers
 // a different question ("how much credit does each touch get"). Not every
 // campaign/channel needs every stage populated.
+//
+// Production readiness review: excludes isDemo rows by default so demo/
+// seed activity never blends into a production funnel/impact figure. Pass
+// `{ includeDemo: true }` to include it (e.g. the local-dev demo walkthrough).
+
+export interface FunnelOptions {
+  includeDemo?: boolean;
+}
 
 export const FUNNEL_STAGES = [
   "REACH",
@@ -36,10 +44,12 @@ type ConversionType = (typeof schema.conversionTypeEnum.enumValues)[number];
 
 async function touchpointProfileIds(
   types: readonly TouchpointType[],
-  campaignId?: string
+  campaignId?: string,
+  includeDemo = false
 ): Promise<Set<string>> {
   const conditions = [inArray(schema.touchpoints.type, types as TouchpointType[])];
   if (campaignId) conditions.push(eq(schema.touchpoints.campaignId, campaignId));
+  if (!includeDemo) conditions.push(eq(schema.touchpoints.isDemo, false));
   const rows = await db
     .selectDistinct({ profileId: schema.touchpoints.profileId })
     .from(schema.touchpoints)
@@ -47,11 +57,13 @@ async function touchpointProfileIds(
   return new Set(rows.map((r) => r.profileId));
 }
 
-async function conversionProfileIds(types: readonly ConversionType[]): Promise<Set<string>> {
+async function conversionProfileIds(types: readonly ConversionType[], includeDemo = false): Promise<Set<string>> {
+  const conditions = [inArray(schema.conversionEvents.conversionType, types as ConversionType[])];
+  if (!includeDemo) conditions.push(eq(schema.conversionEvents.isDemo, false));
   const rows = await db
     .selectDistinct({ profileId: schema.conversionEvents.profileId })
     .from(schema.conversionEvents)
-    .where(inArray(schema.conversionEvents.conversionType, types as ConversionType[]));
+    .where(and(...conditions));
   return new Set(rows.map((r) => r.profileId));
 }
 
@@ -62,28 +74,28 @@ function intersectIfFiltered(set: Set<string>, reached: Set<string>, campaignId?
   return count;
 }
 
-export async function computeFunnelSummary(campaignId?: string): Promise<FunnelSummary> {
+export async function computeFunnelSummary(campaignId?: string, options: FunnelOptions = {}): Promise<FunnelSummary> {
+  const includeDemo = options.includeDemo ?? false;
   const reached = await touchpointProfileIds(
     ["AD_IMPRESSION", "AD_CLICK", "LANDING_PAGE_VIEW", "OUTREACH_PLANNED", "OUTREACH_SENT"],
-    campaignId
+    campaignId,
+    includeDemo
   );
-  const visited = await touchpointProfileIds(["LANDING_PAGE_VIEW"], campaignId);
-  const engaged = await touchpointProfileIds(ENGAGEMENT_TOUCH_TYPES, campaignId);
-  const demoed = await touchpointProfileIds(["DEMO_STARTED", "DEMO_COMPLETED"], campaignId);
-  const productStarted = await touchpointProfileIds(["SECURELINK_STARTED"], campaignId);
+  const visited = await touchpointProfileIds(["LANDING_PAGE_VIEW"], campaignId, includeDemo);
+  const engaged = await touchpointProfileIds(ENGAGEMENT_TOUCH_TYPES, campaignId, includeDemo);
+  const demoed = await touchpointProfileIds(["DEMO_STARTED", "DEMO_COMPLETED"], campaignId, includeDemo);
+  const productStarted = await touchpointProfileIds(["SECURELINK_STARTED"], campaignId, includeDemo);
 
-  const ksNumber = await conversionProfileIds(["KSNUMBER_CREATED"]);
-  const productCreated = await conversionProfileIds([
-    "FIRST_SECURELINK",
-    "FIRST_KEYCONTRACT",
-    "FIRST_GROUP_SECURELINK",
-    "FIRST_SECUREFLOW",
-  ]);
-  const payment = await conversionProfileIds(["PAYMENT_COMMITTED"]);
-  const agreement = await conversionProfileIds(["AGREEMENT_COMPLETED"]);
-  const settlement = await conversionProfileIds(["SETTLEMENT_COMPLETED"]);
-  const repeat = await conversionProfileIds(["REPEAT_USE"]);
-  const referral = await conversionProfileIds(["REFERRAL"]);
+  const ksNumber = await conversionProfileIds(["KSNUMBER_CREATED"], includeDemo);
+  const productCreated = await conversionProfileIds(
+    ["FIRST_SECURELINK", "FIRST_KEYCONTRACT", "FIRST_GROUP_SECURELINK", "FIRST_SECUREFLOW"],
+    includeDemo
+  );
+  const payment = await conversionProfileIds(["PAYMENT_COMMITTED"], includeDemo);
+  const agreement = await conversionProfileIds(["AGREEMENT_COMPLETED"], includeDemo);
+  const settlement = await conversionProfileIds(["SETTLEMENT_COMPLETED"], includeDemo);
+  const repeat = await conversionProfileIds(["REPEAT_USE"], includeDemo);
+  const referral = await conversionProfileIds(["REFERRAL"], includeDemo);
 
   return {
     campaignId: campaignId ?? null,
@@ -177,31 +189,47 @@ const FIRST_USE_CONVERSION_TYPES = [
 
 // Real Phase 4 counts only — Section 30. No fabricated revenue: this
 // function never invents a monetary figure.
-export async function computeImpactSummary(): Promise<ImpactSummary> {
-  const reached = await touchpointProfileIds(["AD_IMPRESSION", "AD_CLICK", "LANDING_PAGE_VIEW", "OUTREACH_PLANNED", "OUTREACH_SENT"]);
-  const engaged = await touchpointProfileIds(ENGAGEMENT_TOUCH_TYPES);
+export async function computeImpactSummary(options: FunnelOptions = {}): Promise<ImpactSummary> {
+  const includeDemo = options.includeDemo ?? false;
+  const demoConversionCondition = includeDemo ? [] : [eq(schema.conversionEvents.isDemo, false)];
+  const demoAttributionCondition = includeDemo ? [] : [eq(schema.conversionEvents.isDemo, false)];
+
+  const reached = await touchpointProfileIds(
+    ["AD_IMPRESSION", "AD_CLICK", "LANDING_PAGE_VIEW", "OUTREACH_PLANNED", "OUTREACH_SENT"],
+    undefined,
+    includeDemo
+  );
+  const engaged = await touchpointProfileIds(ENGAGEMENT_TOUCH_TYPES, undefined, includeDemo);
 
   const [ksNumberRows, firstUseRows, agreementRows] = await Promise.all([
-    db.select({ count: sql<number>`count(*)::int` }).from(schema.conversionEvents).where(eq(schema.conversionEvents.conversionType, "KSNUMBER_CREATED")),
     db
       .select({ count: sql<number>`count(*)::int` })
       .from(schema.conversionEvents)
-      .where(inArray(schema.conversionEvents.conversionType, [...FIRST_USE_CONVERSION_TYPES])),
-    db.select({ count: sql<number>`count(*)::int` }).from(schema.conversionEvents).where(eq(schema.conversionEvents.conversionType, "AGREEMENT_COMPLETED")),
+      .where(and(eq(schema.conversionEvents.conversionType, "KSNUMBER_CREATED"), ...demoConversionCondition)),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.conversionEvents)
+      .where(and(inArray(schema.conversionEvents.conversionType, [...FIRST_USE_CONVERSION_TYPES]), ...demoConversionCondition)),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.conversionEvents)
+      .where(and(eq(schema.conversionEvents.conversionType, "AGREEMENT_COMPLETED"), ...demoConversionCondition)),
   ]);
 
-  const repeatUserIds = await conversionProfileIds(["REPEAT_USE"]);
+  const repeatUserIds = await conversionProfileIds(["REPEAT_USE"], includeDemo);
 
   const byCampaign = await db
     .select({ campaignId: schema.attributionRecords.campaignId, count: sql<number>`count(distinct ${schema.attributionRecords.conversionEventId})::int` })
     .from(schema.attributionRecords)
-    .where(eq(schema.attributionRecords.attributionModel, "LAST_TOUCH"))
+    .innerJoin(schema.conversionEvents, eq(schema.attributionRecords.conversionEventId, schema.conversionEvents.id))
+    .where(and(eq(schema.attributionRecords.attributionModel, "LAST_TOUCH"), ...demoAttributionCondition))
     .groupBy(schema.attributionRecords.campaignId);
 
   const byChannel = await db
     .select({ channel: schema.attributionRecords.channel, count: sql<number>`count(distinct ${schema.attributionRecords.conversionEventId})::int` })
     .from(schema.attributionRecords)
-    .where(eq(schema.attributionRecords.attributionModel, "LAST_TOUCH"))
+    .innerJoin(schema.conversionEvents, eq(schema.attributionRecords.conversionEventId, schema.conversionEvents.id))
+    .where(and(eq(schema.attributionRecords.attributionModel, "LAST_TOUCH"), ...demoAttributionCondition))
     .groupBy(schema.attributionRecords.channel);
 
   return {

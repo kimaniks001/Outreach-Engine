@@ -6,6 +6,16 @@ import { computeFunnelSummary, computeDropOffFindings } from "@/lib/attribution/
 // direct aggregation of real Phase 1-4 records (touchpoints, conversions,
 // attribution, distribution executions). Nothing is fabricated; a metric
 // with no underlying data is 0 or null, never invented.
+//
+// Production readiness review: every function here excludes isDemo rows by
+// default (`includeDemo: false`) so demo/seed data can never blend into a
+// production Impact/Analytics figure. Callers that explicitly want demo
+// data included (e.g. the local-dev seed walkthrough) must opt in with
+// `{ includeDemo: true }`. See docs/PRODUCTION_READINESS_REVIEW.md.
+
+export interface ScorecardOptions {
+  includeDemo?: boolean;
+}
 
 const ENGAGEMENT_TOUCH_TYPES = [
   "AD_CLICK",
@@ -33,11 +43,13 @@ async function distinctProfileCount(
   return rows.length;
 }
 
-async function planIdsForCampaign(campaignId: string): Promise<string[]> {
+async function planIdsForCampaign(campaignId: string, includeDemo: boolean): Promise<string[]> {
+  const conditions = [eq(schema.distributionPlans.campaignId, campaignId)];
+  if (!includeDemo) conditions.push(eq(schema.distributionPlans.isDemo, false));
   const rows = await db
     .select({ id: schema.distributionPlans.id })
     .from(schema.distributionPlans)
-    .where(eq(schema.distributionPlans.campaignId, campaignId));
+    .where(and(...conditions));
   return rows.map((r) => r.id);
 }
 
@@ -56,17 +68,28 @@ export interface CampaignScorecard {
   dropOffFindings: ReturnType<typeof computeDropOffFindings>;
 }
 
-export async function computeCampaignScorecard(campaignId: string): Promise<CampaignScorecard> {
-  const reach = await distinctProfileCount([eq(schema.touchpoints.campaignId, campaignId)]);
+export async function computeCampaignScorecard(campaignId: string, options: ScorecardOptions = {}): Promise<CampaignScorecard> {
+  const includeDemo = options.includeDemo ?? false;
+  const touchpointDemoCondition = includeDemo ? [] : [eq(schema.touchpoints.isDemo, false)];
+
+  const reach = await distinctProfileCount([eq(schema.touchpoints.campaignId, campaignId), ...touchpointDemoCondition]);
   const engagement = await distinctProfileCount([
     eq(schema.touchpoints.campaignId, campaignId),
     inArray(schema.touchpoints.type, [...ENGAGEMENT_TOUCH_TYPES]),
+    ...touchpointDemoCondition,
   ]);
 
   const attributionRows = await db
     .select({ conversionEventId: schema.attributionRecords.conversionEventId })
     .from(schema.attributionRecords)
-    .where(and(eq(schema.attributionRecords.campaignId, campaignId), eq(schema.attributionRecords.attributionModel, "LINEAR")));
+    .innerJoin(schema.conversionEvents, eq(schema.attributionRecords.conversionEventId, schema.conversionEvents.id))
+    .where(
+      and(
+        eq(schema.attributionRecords.campaignId, campaignId),
+        eq(schema.attributionRecords.attributionModel, "LINEAR"),
+        ...(includeDemo ? [] : [eq(schema.conversionEvents.isDemo, false)])
+      )
+    );
   const attributedConversionIds = [...new Set(attributionRows.map((r) => r.conversionEventId))];
 
   let registrations = 0;
@@ -87,7 +110,7 @@ export async function computeCampaignScorecard(campaignId: string): Promise<Camp
     }
   }
 
-  const planIds = await planIdsForCampaign(campaignId);
+  const planIds = await planIdsForCampaign(campaignId, includeDemo);
   let spend: number | null = null;
   if (planIds.length > 0) {
     const spendRows = await db
@@ -97,7 +120,7 @@ export async function computeCampaignScorecard(campaignId: string): Promise<Camp
     spend = spendRows[0]?.total !== null && spendRows[0]?.total !== undefined ? Number(spendRows[0].total) : null;
   }
 
-  const funnel = await computeFunnelSummary(campaignId);
+  const funnel = await computeFunnelSummary(campaignId, options);
   const dropOffFindings = computeDropOffFindings(funnel);
 
   return {
@@ -125,13 +148,27 @@ export interface ChannelScorecard {
   touchModelContribution: { firstTouch: number; lastTouch: number; linear: number; multiTouch: number };
 }
 
-export async function computeChannelScorecard(channel: (typeof schema.channelTypeEnum.enumValues)[number]): Promise<ChannelScorecard> {
-  const reach = await distinctProfileCount([eq(schema.touchpoints.channel, channel)]);
+export async function computeChannelScorecard(
+  channel: (typeof schema.channelTypeEnum.enumValues)[number],
+  options: ScorecardOptions = {}
+): Promise<ChannelScorecard> {
+  const includeDemo = options.includeDemo ?? false;
+
+  const reach = await distinctProfileCount([
+    eq(schema.touchpoints.channel, channel),
+    ...(includeDemo ? [] : [eq(schema.touchpoints.isDemo, false)]),
+  ]);
 
   const attributionRows = await db
     .select({ attributionModel: schema.attributionRecords.attributionModel, conversionEventId: schema.attributionRecords.conversionEventId })
     .from(schema.attributionRecords)
-    .where(eq(schema.attributionRecords.channel, channel));
+    .innerJoin(schema.conversionEvents, eq(schema.attributionRecords.conversionEventId, schema.conversionEvents.id))
+    .where(
+      and(
+        eq(schema.attributionRecords.channel, channel),
+        ...(includeDemo ? [] : [eq(schema.conversionEvents.isDemo, false)])
+      )
+    );
 
   const byModel = { firstTouch: 0, lastTouch: 0, linear: 0, multiTouch: 0 };
   const linearConversionIds = new Set<string>();
@@ -148,7 +185,13 @@ export async function computeChannelScorecard(channel: (typeof schema.channelTyp
   const executionRows = await db
     .select({ total: sql<string | null>`sum(${schema.distributionExecutions.reportedSpend})` })
     .from(schema.distributionExecutions)
-    .where(eq(schema.distributionExecutions.channel, channel));
+    .innerJoin(schema.distributionPlans, eq(schema.distributionExecutions.distributionPlanId, schema.distributionPlans.id))
+    .where(
+      and(
+        eq(schema.distributionExecutions.channel, channel),
+        ...(includeDemo ? [] : [eq(schema.distributionPlans.isDemo, false)])
+      )
+    );
   const spend = executionRows[0]?.total !== null && executionRows[0]?.total !== undefined ? Number(executionRows[0].total) : null;
 
   return {
@@ -167,17 +210,26 @@ export interface ProductScorecard {
   repeatUsers: number; // distinct profiles with a REPEAT_USE conversion after this product's first-use conversion type
 }
 
-export async function computeProductScorecards(): Promise<ProductScorecard[]> {
+export async function computeProductScorecards(options: ScorecardOptions = {}): Promise<ProductScorecard[]> {
+  const includeDemo = options.includeDemo ?? false;
   const results: ProductScorecard[] = [];
   for (const [label, touchType] of Object.entries(PRODUCT_TOUCH_TYPES)) {
-    const adoption = await distinctProfileCount([eq(schema.touchpoints.type, touchType)]);
+    const adoption = await distinctProfileCount([
+      eq(schema.touchpoints.type, touchType),
+      ...(includeDemo ? [] : [eq(schema.touchpoints.isDemo, false)]),
+    ]);
     results.push({ product: label, adoption, repeatUsers: 0 });
   }
 
   const repeatRows = await db
     .selectDistinct({ profileId: schema.conversionEvents.profileId })
     .from(schema.conversionEvents)
-    .where(eq(schema.conversionEvents.conversionType, "REPEAT_USE"));
+    .where(
+      and(
+        eq(schema.conversionEvents.conversionType, "REPEAT_USE"),
+        ...(includeDemo ? [] : [eq(schema.conversionEvents.isDemo, false)])
+      )
+    );
   const repeatCount = repeatRows.length;
   // Repeat use isn't tracked per-product in this schema (PRODUCT_REUSED/
   // REPEAT_USE are product-agnostic signals) — reported once as an overall
@@ -192,31 +244,39 @@ export interface AudienceScorecard {
   lifecycleDistribution: Record<string, number>;
 }
 
-export async function computeAudienceScorecard(audienceSegmentId: string): Promise<AudienceScorecard> {
+export async function computeAudienceScorecard(audienceSegmentId: string, options: ScorecardOptions = {}): Promise<AudienceScorecard> {
+  const includeDemo = options.includeDemo ?? false;
+
+  const planConditions = [eq(schema.distributionPlans.audienceSegmentId, audienceSegmentId)];
+  if (!includeDemo) planConditions.push(eq(schema.distributionPlans.isDemo, false));
   const planRows = await db
     .select({ id: schema.distributionPlans.id })
     .from(schema.distributionPlans)
-    .where(eq(schema.distributionPlans.audienceSegmentId, audienceSegmentId));
+    .where(and(...planConditions));
   const planIds = planRows.map((r) => r.id);
 
   if (planIds.length === 0) {
     return { audienceSegmentId, engagement: 0, conversions: 0, lifecycleDistribution: {} };
   }
 
+  const touchConditions = [inArray(schema.touchpoints.distributionPlanId, planIds), inArray(schema.touchpoints.type, [...ENGAGEMENT_TOUCH_TYPES])];
+  if (!includeDemo) touchConditions.push(eq(schema.touchpoints.isDemo, false));
   const touchRows = await db
     .selectDistinct({ profileId: schema.touchpoints.profileId })
     .from(schema.touchpoints)
-    .where(and(inArray(schema.touchpoints.distributionPlanId, planIds), inArray(schema.touchpoints.type, [...ENGAGEMENT_TOUCH_TYPES])));
+    .where(and(...touchConditions));
   const profileIds = touchRows.map((r) => r.profileId);
 
   if (profileIds.length === 0) {
     return { audienceSegmentId, engagement: 0, conversions: 0, lifecycleDistribution: {} };
   }
 
+  const conversionConditions = [inArray(schema.conversionEvents.profileId, profileIds)];
+  if (!includeDemo) conversionConditions.push(eq(schema.conversionEvents.isDemo, false));
   const conversions = await db
     .select({ id: schema.conversionEvents.id })
     .from(schema.conversionEvents)
-    .where(inArray(schema.conversionEvents.profileId, profileIds));
+    .where(and(...conversionConditions));
 
   const profiles = await db
     .select({ lifecycleState: schema.audienceProfiles.lifecycleState })

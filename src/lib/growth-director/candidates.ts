@@ -396,7 +396,18 @@ async function modelCandidates(): Promise<RecommendationCandidate[]> {
   }));
 }
 
-export async function generateCandidates(): Promise<RecommendationCandidate[]> {
+export interface GenerateCandidatesOptions {
+  includeDemo?: boolean;
+}
+
+// Production readiness review: excludes isDemo-derived candidates by
+// default so a demo campaign/plan/experiment can never surface in the
+// real "What should SecurePay do next?" ranking. Each rule already traces
+// isDemo from its underlying entity (see RecommendationCandidate.isDemo
+// above); this is the single choke point that acts on it. Pass
+// `{ includeDemo: true }` to include demo-derived candidates (used only by
+// the local-dev seed walkthrough).
+export async function generateCandidates(options: GenerateCandidatesOptions = {}): Promise<RecommendationCandidate[]> {
   const results = await Promise.all([
     funnelDropOffCandidates(),
     lowValuePlanCandidates(),
@@ -408,7 +419,7 @@ export async function generateCandidates(): Promise<RecommendationCandidate[]> {
     modelCandidates(),
   ]);
 
-  const candidates = results.flat();
+  const candidates = options.includeDemo ? results.flat() : results.flat().filter((c) => !c.isDemo);
 
   if (candidates.length === 0) {
     candidates.push({

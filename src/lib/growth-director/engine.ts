@@ -56,6 +56,10 @@ export interface GenerateOptions {
   useAiNarrative?: boolean;
   requestedByUserId?: string;
   generatedByUserId?: string | null;
+  // Production readiness review: defaults to false so demo-derived
+  // candidates are never persisted as live recommendations. Set true only
+  // for the local-dev seed demo walkthrough.
+  includeDemo?: boolean;
 }
 
 // Supersedes every still-open recommendation from a prior generation run
@@ -74,7 +78,7 @@ export async function generateAndPersistRecommendations(options: GenerateOptions
       .where(inArray(schema.growthRecommendations.id, openRows.map((r) => r.id)));
   }
 
-  const candidates = await generateCandidates();
+  const candidates = await generateCandidates({ includeDemo: options.includeDemo });
   const ranked = rankCandidates(candidates);
 
   const expiresAt = new Date(Date.now() + RECOMMENDATION_LIFETIME_DAYS * 24 * 60 * 60 * 1000);
@@ -139,11 +143,19 @@ export async function generateAndPersistRecommendations(options: GenerateOptions
   return inserted;
 }
 
-export async function listCurrentRecommendations() {
+// Production readiness review: excludes isDemo rows by default — even
+// though generation already excludes them (above), this is a second,
+// independent choke point so a demo recommendation persisted by the
+// local-dev seed walkthrough (which explicitly opts in) can never surface
+// in a real Owner/Growth Director's view without an explicit opt-in here
+// too.
+export async function listCurrentRecommendations(options: { includeDemo?: boolean } = {}) {
+  const conditions = [inArray(schema.growthRecommendations.status, [...CURRENT_STATUSES])];
+  if (!options.includeDemo) conditions.push(eq(schema.growthRecommendations.isDemo, false));
   const rows = await db
     .select()
     .from(schema.growthRecommendations)
-    .where(inArray(schema.growthRecommendations.status, [...CURRENT_STATUSES]))
+    .where(and(...conditions))
     .orderBy(desc(schema.growthRecommendations.rankingScore));
   return rows;
 }
@@ -170,8 +182,8 @@ export interface WhatShouldWeDoNextItem {
 // Returns 3-7 items when available; never fabricates generic advice — if
 // fewer than 3 real candidates exist, it returns however many are real
 // (including a single NO_ACTION), rather than padding with invented ones.
-export async function whatShouldSecurePayDoNext(limit = 7): Promise<WhatShouldWeDoNextItem[]> {
-  const current = await listCurrentRecommendations();
+export async function whatShouldSecurePayDoNext(limit = 7, options: { includeDemo?: boolean } = {}): Promise<WhatShouldWeDoNextItem[]> {
+  const current = await listCurrentRecommendations(options);
   return current.slice(0, Math.max(3, Math.min(limit, current.length))).map((r) => ({
     id: r.id,
     recommendation: r.title,
