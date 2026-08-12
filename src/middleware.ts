@@ -9,7 +9,11 @@ import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth/session";
 // docs/ACCESS_CONTROL_MODEL.md Section 5.
 
 const PUBLIC_PAGE_PATHS = ["/login"];
-const PUBLIC_API_PATHS = ["/api/auth/login", "/api/auth/logout"];
+// /api/health is public because a hosting platform's health/readiness
+// probe runs before any operator can log in — see src/app/api/health/route.ts,
+// which is deliberately built to never return secrets/connection strings/
+// stack traces so this exemption is safe.
+const PUBLIC_API_PATHS = ["/api/auth/login", "/api/auth/logout", "/api/health"];
 
 // The product-event ingestion boundary (Phase 4 brief Section 14) accepts
 // EITHER an authenticated Owner session OR a shared-secret header for a

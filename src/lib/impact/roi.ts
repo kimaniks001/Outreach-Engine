@@ -1,4 +1,4 @@
-import { eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 
 // Practical efficiency model — Phase 5 brief Section 9. Never fabricates a
@@ -6,6 +6,17 @@ import { db, schema } from "@/lib/db";
 // measured outcome counts; ROI is computed only when real
 // conversion_events.value data exists, otherwise the system says so
 // explicitly rather than guessing.
+//
+// Production readiness review: distribution spend and conversion-derived
+// counts exclude isDemo rows by default so demo/seed activity never
+// inflates a production efficiency/ROI figure. AI cost is intentionally
+// never demo-filtered — a real AI call costs real money regardless of
+// which campaign triggered it. Pass `{ includeDemo: true }` to include
+// demo data (e.g. the local-dev demo walkthrough).
+
+export interface EfficiencyOptions {
+  includeDemo?: boolean;
+}
 
 const ENGAGEMENT_TOUCH_TYPES = [
   "AD_CLICK",
@@ -37,9 +48,21 @@ function safeDivide(cost: number | null, count: number): number | null {
   return Math.round((cost / count) * 100) / 100;
 }
 
-export async function computeEfficiencySummary(): Promise<EfficiencySummary> {
+export async function computeEfficiencySummary(options: EfficiencyOptions = {}): Promise<EfficiencySummary> {
+  const includeDemo = options.includeDemo ?? false;
+  const demoConversionCondition = includeDemo ? [] : [eq(schema.conversionEvents.isDemo, false)];
+
   const [distributionSpendRows, aiCostRows] = await Promise.all([
-    db.select({ total: sql<string | null>`sum(${schema.distributionExecutions.reportedSpend})` }).from(schema.distributionExecutions),
+    includeDemo
+      ? db.select({ total: sql<string | null>`sum(${schema.distributionExecutions.reportedSpend})` }).from(schema.distributionExecutions)
+      : db
+          .select({ total: sql<string | null>`sum(${schema.distributionExecutions.reportedSpend})` })
+          .from(schema.distributionExecutions)
+          .innerJoin(schema.distributionPlans, eq(schema.distributionExecutions.distributionPlanId, schema.distributionPlans.id))
+          .where(eq(schema.distributionPlans.isDemo, false)),
+    // AI cost is never demo-filtered — a real AI call costs real money
+    // regardless of which campaign triggered it (ai_usage_records carries
+    // no isDemo column by design; see docs/PHASE_5_MODEL_PERFORMANCE_AND_COST.md).
     db.select({ total: sql<string | null>`sum(${schema.aiUsageRecords.estimatedCostUsd})` }).from(schema.aiUsageRecords),
   ]);
 
@@ -50,16 +73,35 @@ export async function computeEfficiencySummary(): Promise<EfficiencySummary> {
   const engagedRows = await db
     .selectDistinct({ profileId: schema.touchpoints.profileId })
     .from(schema.touchpoints)
-    .where(inArray(schema.touchpoints.type, [...ENGAGEMENT_TOUCH_TYPES]));
+    .where(
+      and(
+        inArray(schema.touchpoints.type, [...ENGAGEMENT_TOUCH_TYPES]),
+        ...(includeDemo ? [] : [eq(schema.touchpoints.isDemo, false)])
+      )
+    );
 
   const [ksNumberRows, firstUseRows, agreementRows, repeatRows] = await Promise.all([
-    db.select({ count: sql<number>`count(*)::int` }).from(schema.conversionEvents).where(eq(schema.conversionEvents.conversionType, "KSNUMBER_CREATED")),
     db
       .select({ count: sql<number>`count(*)::int` })
       .from(schema.conversionEvents)
-      .where(inArray(schema.conversionEvents.conversionType, ["FIRST_SECURELINK", "FIRST_KEYCONTRACT", "FIRST_GROUP_SECURELINK", "FIRST_SECUREFLOW"])),
-    db.select({ count: sql<number>`count(*)::int` }).from(schema.conversionEvents).where(eq(schema.conversionEvents.conversionType, "AGREEMENT_COMPLETED")),
-    db.selectDistinct({ profileId: schema.conversionEvents.profileId }).from(schema.conversionEvents).where(eq(schema.conversionEvents.conversionType, "REPEAT_USE")),
+      .where(and(eq(schema.conversionEvents.conversionType, "KSNUMBER_CREATED"), ...demoConversionCondition)),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.conversionEvents)
+      .where(
+        and(
+          inArray(schema.conversionEvents.conversionType, ["FIRST_SECURELINK", "FIRST_KEYCONTRACT", "FIRST_GROUP_SECURELINK", "FIRST_SECUREFLOW"]),
+          ...demoConversionCondition
+        )
+      ),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.conversionEvents)
+      .where(and(eq(schema.conversionEvents.conversionType, "AGREEMENT_COMPLETED"), ...demoConversionCondition)),
+    db
+      .selectDistinct({ profileId: schema.conversionEvents.profileId })
+      .from(schema.conversionEvents)
+      .where(and(eq(schema.conversionEvents.conversionType, "REPEAT_USE"), ...demoConversionCondition)),
   ]);
 
   const engagedProfiles = engagedRows.length;
@@ -91,18 +133,24 @@ export type RoiResult =
 
 // Never fabricated: only computed when at least one conversion_events.value
 // is actually known. See Phase 5 brief Section 9.
-export async function computeRoi(): Promise<RoiResult> {
+export async function computeRoi(options: EfficiencyOptions = {}): Promise<RoiResult> {
+  const includeDemo = options.includeDemo ?? false;
   const valueRows = await db
     .select({ value: schema.conversionEvents.value })
     .from(schema.conversionEvents)
-    .where(isNotNull(schema.conversionEvents.value));
+    .where(
+      and(
+        isNotNull(schema.conversionEvents.value),
+        ...(includeDemo ? [] : [eq(schema.conversionEvents.isDemo, false)])
+      )
+    );
 
   if (valueRows.length === 0) {
     return { status: "INSUFFICIENT_VALUE_DATA" };
   }
 
   const totalValue = valueRows.reduce((sum, r) => sum + Number(r.value), 0);
-  const efficiency = await computeEfficiencySummary();
+  const efficiency = await computeEfficiencySummary(options);
   const totalCost = efficiency.totalMeasuredCost ?? 0;
 
   // Zero measured cost makes ROI mathematically undefined (division by

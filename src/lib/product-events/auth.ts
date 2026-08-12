@@ -1,6 +1,18 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
 import { recordAuditEvent } from "@/lib/audit/log";
+
+// Constant-time secret comparison — a plain `===` leaks timing
+// information proportional to the number of matching leading bytes,
+// which is a real (if narrow) side channel for a shared secret compared
+// over the network. See docs/PRODUCTION_READINESS_REVIEW.md.
+function secretsMatch(provided: string, configured: string): boolean {
+  const providedBuf = Buffer.from(provided);
+  const configuredBuf = Buffer.from(configured);
+  if (providedBuf.length !== configuredBuf.length) return false;
+  return timingSafeEqual(providedBuf, configuredBuf);
+}
 
 // Product-event ingestion boundary auth — Phase 4 brief Section 14: "an
 // internal authenticated endpoint... Do not require live SecurePay API
@@ -28,7 +40,7 @@ export async function requireProductEventIngestionAuth(req: NextRequest): Promis
   const configuredSecret = process.env.PRODUCT_EVENT_INGESTION_SECRET;
   if (configuredSecret) {
     const provided = req.headers.get("x-outreach-ingestion-secret");
-    if (provided && provided === configuredSecret) {
+    if (provided && secretsMatch(provided, configuredSecret)) {
       return { ok: true, actorUserId: null, actorLabel: "system:product-event-ingestion", response: null };
     }
   }

@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "SecurePay Outreach Engine — Command Centre + AI Core (Phase 1)",
+  "engines": {
+    "node": ">=18.18.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -13,7 +16,9 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file=.env.local scripts/migrate.ts",
-    "db:seed": "tsx --env-file=.env.local scripts/seed.ts"
+    "db:seed": "tsx --env-file=.env.local scripts/seed.ts",
+    "db:migrate:production": "tsx scripts/migrate.ts",
+    "db:bootstrap": "tsx scripts/bootstrap-production.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

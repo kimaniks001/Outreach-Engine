@@ -47,16 +47,26 @@ describe("computeCampaignScorecard: metrics match underlying events, no fabricat
 
     await recordConversionEvent({ profileId: p1.id, conversionType: "KSNUMBER_CREATED", occurredAt: new Date(), isDemo: true });
 
-    const scorecard = await computeCampaignScorecard(campaign.id);
+    const scorecard = await computeCampaignScorecard(campaign.id, { includeDemo: true });
     expect(scorecard.reach).toBe(2);
     expect(scorecard.engagement).toBe(1); // only p1 had a LANDING_PAGE_VIEW (engagement touch)
     expect(scorecard.registrations).toBe(1);
   });
 
+  it("isDemo activity is excluded by default — production Impact figures never include demo data", async () => {
+    const ownerId = await getOwnerId();
+    const campaign = await createReadyCampaign(ownerId);
+    const p1 = await resolveProfile({ identifiers: { email: `${randomUUID()}@example.com` }, source: "test", isDemo: true });
+    await recordTouchpoint({ profileId: p1.id, campaignId: campaign.id, type: "AD_IMPRESSION", channel: "GOOGLE_SEARCH", isDemo: true });
+
+    const scorecard = await computeCampaignScorecard(campaign.id);
+    expect(scorecard.reach).toBe(0);
+  });
+
   it("a campaign with no activity reports all-zero counts, never a fabricated non-zero", async () => {
     const ownerId = await getOwnerId();
     const campaign = await createReadyCampaign(ownerId);
-    const scorecard = await computeCampaignScorecard(campaign.id);
+    const scorecard = await computeCampaignScorecard(campaign.id, { includeDemo: true });
     expect(scorecard.reach).toBe(0);
     expect(scorecard.registrations).toBe(0);
     expect(scorecard.spend).toBeNull();
@@ -74,8 +84,8 @@ describe("computeChannelScorecard: channel slices are correct", () => {
     await recordTouchpoint({ profileId: p1.id, campaignId: campaign.id, type: "AD_IMPRESSION", channel: "GOOGLE_SEARCH", isDemo: true });
     await recordTouchpoint({ profileId: p2.id, campaignId: campaign.id, type: "AD_IMPRESSION", channel: "META_FACEBOOK", isDemo: true });
 
-    const googleCard = await computeChannelScorecard("GOOGLE_SEARCH");
-    const metaCard = await computeChannelScorecard("META_FACEBOOK");
+    const googleCard = await computeChannelScorecard("GOOGLE_SEARCH", { includeDemo: true });
+    const metaCard = await computeChannelScorecard("META_FACEBOOK", { includeDemo: true });
     expect(googleCard.reach).toBeGreaterThanOrEqual(1);
     expect(metaCard.reach).toBeGreaterThanOrEqual(1);
   });
@@ -106,7 +116,7 @@ describe("ROI: never fabricated", () => {
     await recordTouchpoint({ profileId: profile.id, campaignId: campaign.id, type: "AD_IMPRESSION", isDemo: true });
     await recordConversionEvent({ profileId: profile.id, conversionType: "AGREEMENT_COMPLETED", occurredAt: new Date(), value: 500, isDemo: true });
 
-    const roi = await computeRoi();
+    const roi = await computeRoi({ includeDemo: true });
     // Whether COMPUTED depends on whether any cost has ever been recorded
     // in this test DB (distribution spend or AI cost) — assert the
     // deterministic contract rather than a specific number.
