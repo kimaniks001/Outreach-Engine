@@ -1,4 +1,4 @@
-name: Community LIVE validation
+name: Market Network validation
 
 on:
   pull_request:
@@ -6,9 +6,12 @@ on:
       - "src/app/(community)/**"
       - "src/app/api/securepay-auth/**"
       - "src/components/community/**"
+      - "src/components/readiness/**"
       - "src/lib/community/**"
+      - "src/lib/readiness/**"
       - "src/middleware.ts"
       - "tests/community-*.test.ts"
+      - "tests/readiness-*.test.ts"
       - "tests/securepay-market-auth.test.ts"
       - ".github/workflows/community-live-validation.yml"
   workflow_dispatch:
@@ -36,9 +39,9 @@ jobs:
           --health-retries=10
     env:
       DATABASE_URL: postgres://outreach:outreach@127.0.0.1:5432/outreach_engine_ci
-      SESSION_SECRET: community-live-ci-session-secret-32-bytes-minimum
+      SESSION_SECRET: market-network-ci-session-secret-32-bytes-minimum
       SECUREPAY_API_BASE_URL: https://securepay.invalid/api/v1
-      SEED_OWNER_PASSWORD: community-live-ci-owner-password
+      SEED_OWNER_PASSWORD: market-network-ci-owner-password
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -87,7 +90,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: community-live-vitest-output
+          name: market-network-vitest-output
           path: vitest-output.txt
           if-no-files-found: warn
           retention-days: 3
