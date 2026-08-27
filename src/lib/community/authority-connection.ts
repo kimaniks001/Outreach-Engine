@@ -1,9 +1,6 @@
 import { SecurePayCommunityClient } from "./securepay-community-client";
-import {
-  unavailableSecurePayIdentityBridge,
-  type SecurePayCommunityIdentity,
-  type SecurePayIdentityBridge,
-} from "./identity-bridge";
+import type { SecurePayCommunityIdentity, SecurePayIdentityBridge } from "./identity-bridge";
+import { cookieSecurePayIdentityBridge } from "./securepay-session-cookies";
 
 export type CommunityAuthorityConnection =
   | {
@@ -27,7 +24,7 @@ export type CommunityAuthorityConnection =
  * must remain in clearly-labelled prototype mode.
  */
 export async function resolveCommunityAuthorityConnection(
-  identityBridge: SecurePayIdentityBridge = unavailableSecurePayIdentityBridge,
+  identityBridge: SecurePayIdentityBridge = cookieSecurePayIdentityBridge,
   baseUrl: string | undefined = process.env.SECUREPAY_API_BASE_URL
 ): Promise<CommunityAuthorityConnection> {
   const normalizedBaseUrl = baseUrl?.trim();
