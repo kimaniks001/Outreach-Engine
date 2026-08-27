@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth/session";
-import { SECUREPAY_ACCESS_COOKIE } from "@/lib/community/securepay-session-names";
+import {
+  SECUREPAY_ACCESS_COOKIE,
+  SECUREPAY_REFRESH_COOKIE,
+} from "@/lib/community/securepay-session-names";
 
 // Edge-runtime middleware. This remains only a fast UX gate. Real staff
 // capability checks happen in Node-runtime guards, and Community membership /
@@ -34,15 +37,26 @@ export async function middleware(request: NextRequest) {
   const staffToken = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const staffSession = staffToken ? await verifySessionToken(staffToken) : null;
   const securePayAccessToken = request.cookies.get(SECUREPAY_ACCESS_COOKIE)?.value;
+  const securePayRefreshToken = request.cookies.get(SECUREPAY_REFRESH_COOKIE)?.value;
 
   if (isCommunityPath(pathname)) {
     if (staffSession || securePayAccessToken) return NextResponse.next();
+    if (securePayRefreshToken) {
+      const restore = new URL("/api/securepay-auth/restore", request.url);
+      restore.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+      return NextResponse.redirect(restore);
+    }
     return NextResponse.redirect(new URL("/market-login", request.url));
   }
 
   if (pathname === "/market-login") {
     if (securePayAccessToken) {
       return NextResponse.redirect(new URL("/community-live", request.url));
+    }
+    if (securePayRefreshToken) {
+      const restore = new URL("/api/securepay-auth/restore", request.url);
+      restore.searchParams.set("next", "/community-live");
+      return NextResponse.redirect(restore);
     }
     if (staffSession) {
       return NextResponse.redirect(new URL("/today", request.url));
