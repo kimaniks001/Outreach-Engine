@@ -17,6 +17,7 @@ export default async function CommunityLayout({ children }: { children: React.Re
             <nav className="hidden items-center gap-1 md:flex">
               <CommunityLink href="/community-live">LIVE</CommunityLink>
               <CommunityLink href="/circles">Circles</CommunityLink>
+              <CommunityLink href="/my-market">My Market</CommunityLink>
               <CommunityLink href="/learn">Learn</CommunityLink>
               <CommunityLink href="/opportunities">Opportunities</CommunityLink>
               <CommunityLink href="/community-profile">My identity</CommunityLink>
@@ -46,6 +47,7 @@ export default async function CommunityLayout({ children }: { children: React.Re
         <nav className="mx-auto flex max-w-7xl gap-2 overflow-x-auto border-t border-surface-border px-5 py-2 md:hidden">
           <CommunityLink href="/community-live">LIVE</CommunityLink>
           <CommunityLink href="/circles">Circles</CommunityLink>
+          <CommunityLink href="/my-market">My Market</CommunityLink>
           <CommunityLink href="/learn">Learn</CommunityLink>
           <CommunityLink href="/opportunities">Opportunities</CommunityLink>
           <CommunityLink href="/community-profile">My identity</CommunityLink>
