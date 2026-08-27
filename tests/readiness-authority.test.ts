@@ -1,10 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SecurePayReadinessClient } from "@/lib/readiness/securepay-readiness-client";
 import {
   authoritativeOpportunityEligible,
   hasCurrentCredential,
   type AuthoritativeReadinessProjection,
 } from "@/lib/readiness/authority";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("SecurePayReadinessClient", () => {
   it("propagates the caller bearer token and never puts it in the request body", async () => {
@@ -13,13 +17,12 @@ describe("SecurePayReadinessClient", () => {
       expect(String(init?.body)).not.toContain("caller-token");
       return Response.json({ marketReady: false, credentials: [] });
     });
+    vi.stubGlobal("fetch", fetchMock);
 
     const client = new SecurePayReadinessClient({
       baseUrl: "https://securepay.test/api/v1",
       accessToken: "caller-token",
     });
-    // @ts-expect-error test-only fetch replacement
-    globalThis.fetch = fetchMock;
     await client.getProfile();
   });
 });
