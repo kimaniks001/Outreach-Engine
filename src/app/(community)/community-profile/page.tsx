@@ -2,25 +2,30 @@ import Link from "next/link";
 import { communityProfile, communityPrinciples } from "@/lib/community/foundation";
 import { Card } from "@/components/ui/Card";
 import { requireCommunityActor } from "@/lib/community/current-community-actor";
+import { getReadinessAuthority } from "@/lib/readiness/authority";
 
 export default async function CommunityProfilePage() {
   const actor = await requireCommunityActor();
+  const readiness = await getReadinessAuthority();
+  const liveCredentials = readiness.projection?.credentials ?? [];
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <header>
-        <p className="text-xs font-medium uppercase tracking-widest text-brand">Community identity · prototype</p>
+        <p className="text-xs font-medium uppercase tracking-widest text-brand">Community identity</p>
         <h1 className="mt-1 text-2xl font-semibold text-ink">
           {actor.kind === "SECUREPAY" ? actor.name : communityProfile.name}
         </h1>
         <p className="mt-2 text-sm text-ink-muted">
           {actor.kind === "SECUREPAY"
-            ? "SecurePay identity connected · profile projection not connected yet"
+            ? readiness.status === "CONNECTED"
+              ? "SecurePay identity connected · capability evidence connected"
+              : "SecurePay identity connected · capability evidence unavailable"
             : communityProfile.territory}
         </p>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-ink-muted">
           {actor.kind === "SECUREPAY"
-            ? "Outreach will show your territory, demonstrated skills, Circles and community contribution here only after those sources become authoritative."
+            ? "Your identity can show demonstrated market capability when SecurePay has authoritative evidence. Territory, Circles, Master status and reputation remain separate truths and are not inferred here."
             : `Known for ${communityProfile.knownFor.toLowerCase()}.`}
         </p>
       </header>
@@ -30,14 +35,53 @@ export default async function CommunityProfilePage() {
       </div>
 
       {actor.kind === "SECUREPAY" ? (
-        <Card title="Your community identity is being connected">
-          <p className="text-sm leading-6 text-ink-muted">
-            Your SecurePay session is real, but the current profile cards below are not safe to attach to your identity yet. Market Ready, specialist credentials, Plug status, Master status, reputation and Circles each need their own backend truth before they appear here.
-          </p>
-          <p className="mt-3 text-xs text-ink-faint">
-            We would rather show less than invent a qualification or relationship you do not have.
-          </p>
-        </Card>
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <Card title="Qualifications">
+            {readiness.status === "CONNECTED" ? (
+              liveCredentials.length > 0 ? (
+                <div className="space-y-3">
+                  {liveCredentials.map((credential) => (
+                    <div key={credential.credentialId} className="rounded-lg border border-surface-border bg-surface p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-ink">{credential.name}</p>
+                        <span
+                          className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+                            credential.status === "CURRENT"
+                              ? "border-status-good/30 bg-status-good/10 text-status-good"
+                              : "border-status-warn/30 bg-status-warn/10 text-status-warn"
+                          }`}
+                        >
+                          {credential.status === "CURRENT" ? "Current" : "Refresh required"}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-ink-faint">Evidence version {credential.evidenceVersion}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm leading-6 text-ink-muted">
+                  No Market Ready or specialist credential has been evidenced for this identity yet.
+                </p>
+              )
+            ) : (
+              <p className="text-sm leading-6 text-ink-muted">
+                {readiness.reason} We would rather show no qualification than invent one.
+              </p>
+            )}
+            <Link href="/learn" className="mt-4 inline-block text-sm font-medium text-brand hover:underline">
+              Go to Learn →
+            </Link>
+          </Card>
+
+          <Card title="Identity boundaries">
+            <ul className="space-y-2 text-sm leading-6 text-ink-muted">
+              <li>• A current credential proves demonstrated capability only.</li>
+              <li>• It does not make you SecurePay staff, a Community moderator or a Master.</li>
+              <li>• It does not create referral, Lifetime Share, payment or settlement authority.</li>
+              <li>• Circles and community reputation appear only when their own authority exists.</li>
+            </ul>
+          </Card>
+        </div>
       ) : (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           <Card title="Qualifications · demo persona">
