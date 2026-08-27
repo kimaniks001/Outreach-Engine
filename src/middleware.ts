@@ -1,43 +1,72 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth/session";
+import {
+  SECUREPAY_ACCESS_COOKIE,
+  SECUREPAY_REFRESH_COOKIE,
+} from "@/lib/community/securepay-session-names";
 
-// Edge-runtime middleware. Only checks that a session cookie exists and has
-// a valid signature — it does NOT do role/capability checks (that requires
-// a database lookup, which happens in Node-runtime pages/route handlers via
-// src/lib/rbac/guard.ts). This is a UX convenience layer (fast redirect to
-// /login), not the authorization boundary — see ADR-003 and
-// docs/ACCESS_CONTROL_MODEL.md Section 5.
+// Edge-runtime middleware. This remains only a fast UX gate. Real staff
+// capability checks happen in Node-runtime guards, and Community membership /
+// feed authority is enforced by SecurePayAPI using the caller bearer token.
 
-const PUBLIC_PAGE_PATHS = ["/login"];
-// /api/health is public because a hosting platform's health/readiness
-// probe runs before any operator can log in — see src/app/api/health/route.ts,
-// which is deliberately built to never return secrets/connection strings/
-// stack traces so this exemption is safe.
 const PUBLIC_API_PATHS = ["/api/auth/login", "/api/auth/logout", "/api/health"];
-
-// The product-event ingestion boundary (Phase 4 brief Section 14) accepts
-// EITHER an authenticated Owner session OR a shared-secret header for a
-// real server-to-server SecurePay integration, which by definition has no
-// browser session cookie. It must reach the route handler even with no
-// session cookie so src/lib/product-events/auth.ts can perform that real
-// check — this is NOT a broader public-API exemption: the route itself
-// still rejects any request lacking either credential with 403.
 const SYSTEM_API_PATHS = ["/api/product-events"];
+const SECUREPAY_AUTH_API_PREFIX = "/api/securepay-auth/";
+
+function isCommunityPath(pathname: string): boolean {
+  return (
+    pathname === "/community-live" ||
+    pathname === "/community-profile" ||
+    pathname === "/circles" ||
+    pathname.startsWith("/circles/")
+  );
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isApiRoute = pathname.startsWith("/api/");
 
-  if (PUBLIC_API_PATHS.some((p) => pathname === p) || SYSTEM_API_PATHS.some((p) => pathname === p)) {
+  if (
+    PUBLIC_API_PATHS.some((p) => pathname === p) ||
+    SYSTEM_API_PATHS.some((p) => pathname === p) ||
+    pathname.startsWith(SECUREPAY_AUTH_API_PREFIX)
+  ) {
     return NextResponse.next();
   }
 
-  const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-  const session = token ? await verifySessionToken(token) : null;
+  const staffToken = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+  const staffSession = staffToken ? await verifySessionToken(staffToken) : null;
+  const securePayAccessToken = request.cookies.get(SECUREPAY_ACCESS_COOKIE)?.value;
+  const securePayRefreshToken = request.cookies.get(SECUREPAY_REFRESH_COOKIE)?.value;
 
-  const isPublicPage = PUBLIC_PAGE_PATHS.includes(pathname);
+  if (isCommunityPath(pathname)) {
+    if (staffSession || securePayAccessToken) return NextResponse.next();
+    if (securePayRefreshToken) {
+      const restore = new URL("/api/securepay-auth/restore", request.url);
+      restore.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+      return NextResponse.redirect(restore);
+    }
+    return NextResponse.redirect(new URL("/market-login", request.url));
+  }
 
-  if (!session) {
+  if (pathname === "/market-login") {
+    if (securePayAccessToken) {
+      return NextResponse.redirect(new URL("/community-live", request.url));
+    }
+    if (securePayRefreshToken) {
+      const restore = new URL("/api/securepay-auth/restore", request.url);
+      restore.searchParams.set("next", "/community-live");
+      return NextResponse.redirect(restore);
+    }
+    if (staffSession) {
+      return NextResponse.redirect(new URL("/today", request.url));
+    }
+    return NextResponse.next();
+  }
+
+  const isPublicPage = pathname === "/login";
+
+  if (!staffSession) {
     if (isPublicPage) return NextResponse.next();
     if (isApiRoute) {
       return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
@@ -45,7 +74,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (session && isPublicPage) {
+  if (isPublicPage) {
     return NextResponse.redirect(new URL("/today", request.url));
   }
 

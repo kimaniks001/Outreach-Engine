@@ -1,0 +1,96 @@
+name: Community LIVE validation
+
+on:
+  pull_request:
+    paths:
+      - "src/app/(community)/**"
+      - "src/app/api/securepay-auth/**"
+      - "src/components/community/**"
+      - "src/lib/community/**"
+      - "src/middleware.ts"
+      - "tests/community-*.test.ts"
+      - "tests/securepay-market-auth.test.ts"
+      - ".github/workflows/community-live-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: outreach
+          POSTGRES_PASSWORD: outreach
+          POSTGRES_DB: outreach_engine_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U outreach -d outreach_engine_ci"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgres://outreach:outreach@127.0.0.1:5432/outreach_engine_ci
+      SESSION_SECRET: community-live-ci-session-secret-32-bytes-minimum
+      SECUREPAY_API_BASE_URL: https://securepay.invalid/api/v1
+      SEED_OWNER_PASSWORD: community-live-ci-owner-password
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # The repository currently has pre-existing package-lock drift: npm ci
+      # fails before project code is reached because the Vitest/Vite esbuild
+      # tree is incomplete in package-lock.json. Use npm install here so this
+      # PR can still prove lint/type/test/build. The lockfile repair remains a
+      # separate repository-maintenance task; this workflow does not commit the
+      # runner-generated lockfile.
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Report lockfile drift
+        shell: bash
+        run: |
+          if ! git diff --quiet -- package-lock.json; then
+            echo "::warning::package-lock.json is out of sync with package.json; validation used npm install to reconcile it in the runner."
+          fi
+
+      - name: Migrate test database
+        run: npx tsx scripts/migrate.ts
+
+      - name: Seed deterministic test data
+        run: npx tsx scripts/seed.ts
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test -- --reporter=verbose 2>&1 | tee vitest-output.txt
+
+      - name: Preserve test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: community-live-vitest-output
+          path: vitest-output.txt
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Production build
+        run: npm run build
