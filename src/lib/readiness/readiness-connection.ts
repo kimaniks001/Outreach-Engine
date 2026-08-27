@@ -14,7 +14,16 @@ export async function resolveReadinessAuthorityConnection(
     return { status: "BASE_URL_UNCONFIGURED", reason: "SECUREPAY_API_BASE_URL is not configured" };
   }
 
-  const identity = await cookieSecurePayIdentityBridge.getCurrentIdentity();
+  let identity;
+  try {
+    identity = await cookieSecurePayIdentityBridge.getCurrentIdentity();
+  } catch {
+    return {
+      status: "IDENTITY_UNAVAILABLE",
+      reason: "No request-scoped SecurePay identity context is available",
+    };
+  }
+
   if (!identity) {
     return { status: "IDENTITY_UNAVAILABLE", reason: "No caller-scoped SecurePay identity is connected" };
   }
