@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth/session";
-import { SECUREPAY_ACCESS_COOKIE } from "@/lib/community/securepay-session-cookies";
+import { SECUREPAY_ACCESS_COOKIE } from "@/lib/community/securepay-session-names";
 
 // Edge-runtime middleware. This remains only a fast UX gate. Real staff
 // capability checks happen in Node-runtime guards, and Community membership /
