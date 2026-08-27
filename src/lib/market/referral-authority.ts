@@ -64,7 +64,8 @@ export function totalConfirmedReferralRewardEvidence(
       relationship.rewardCurrency !== null
   );
 
-  if (qualified.length === 0) return null;
+  const first = qualified[0];
+  if (!first?.rewardCurrency) return null;
 
   const currencies = new Set(qualified.map((relationship) => relationship.rewardCurrency));
   if (currencies.size !== 1) return null;
@@ -85,7 +86,7 @@ export function totalConfirmedReferralRewardEvidence(
 
   return {
     amountMinor,
-    currency: qualified[0].rewardCurrency as string,
+    currency: first.rewardCurrency,
     relationshipCount: qualified.length,
   };
 }
