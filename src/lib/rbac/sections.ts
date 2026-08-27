@@ -1,11 +1,13 @@
 import type { Role } from "./roles";
 import { can } from "./permissions";
 
-// Matches the Phase 1 brief's primary navigation and Section 10 access
-// requirements. This is page/route-level gating; src/lib/rbac/permissions.ts
-// is the underlying capability model these access rules are derived from.
+// Primary Outreach navigation. The original Phase 1 sections remain intact;
+// COMMUNITY_LIVE is a post-roadmap foundation slice. It is intentionally
+// limited to current staff roles until Plug/Master/Board become real
+// authenticated principals rather than prototype lenses.
 export const SECTIONS = [
   "TODAY",
+  "COMMUNITY_LIVE",
   "INTELLIGENCE",
   "CAMPAIGNS",
   "AUDIENCES",
@@ -19,6 +21,7 @@ export type Section = (typeof SECTIONS)[number];
 
 export const SECTION_LABELS: Record<Section, string> = {
   TODAY: "Today",
+  COMMUNITY_LIVE: "Community LIVE",
   INTELLIGENCE: "Intelligence",
   CAMPAIGNS: "Campaigns",
   AUDIENCES: "Audiences",
@@ -31,6 +34,7 @@ export const SECTION_LABELS: Record<Section, string> = {
 
 export const SECTION_PATHS: Record<Section, string> = {
   TODAY: "/today",
+  COMMUNITY_LIVE: "/community-live",
   INTELLIGENCE: "/intelligence",
   CAMPAIGNS: "/campaigns",
   AUDIENCES: "/audiences",
@@ -41,18 +45,14 @@ export const SECTION_PATHS: Record<Section, string> = {
   ADMIN: "/admin",
 };
 
-// Explicit per-role section access, matching the Phase 1 brief Section 10
-// verbatim. OWNER always has full access. ADMIN is Owner-only, per the
-// brief's default rule, EXTENDED only where docs/ACCESS_CONTROL_MODEL.md
-// Section 4 clearly grants a read-only view (Growth Director has `view` on
-// `model-config` and `audit`) — see docs/PHASE_1_COMMAND_CENTRE_AND_AI_CORE.md
-// for the reasoning. Growth Director's Admin access is further restricted at
-// the sub-page level (src/app/(dashboard)/admin) to exactly those two
-// resources: no credentials, no Safe Mode control, no mutation.
+// Explicit per-role section access. Community LIVE is currently a staff-side
+// preview only. ANALYST remains on governed outcome views and is deliberately
+// excluded from the social/community surface in this foundation slice.
 const SECTION_ACCESS: Record<Role, readonly Section[]> = {
   OWNER: SECTIONS,
   GROWTH_DIRECTOR: [
     "TODAY",
+    "COMMUNITY_LIVE",
     "INTELLIGENCE",
     "CAMPAIGNS",
     "AUDIENCES",
@@ -61,9 +61,9 @@ const SECTION_ACCESS: Record<Role, readonly Section[]> = {
     "GROWTH_DIRECTOR",
     "ADMIN", // read-only subset only — see admin layout guard
   ],
-  STRATEGIST: ["TODAY", "INTELLIGENCE", "CAMPAIGNS", "AUDIENCES"],
-  CONTENT_ENGAGEMENT: ["TODAY", "ENGAGEMENT", "CAMPAIGNS"],
-  DISTRIBUTION_SALES: ["TODAY", "DISTRIBUTION", "AUDIENCES"],
+  STRATEGIST: ["TODAY", "COMMUNITY_LIVE", "INTELLIGENCE", "CAMPAIGNS", "AUDIENCES"],
+  CONTENT_ENGAGEMENT: ["TODAY", "COMMUNITY_LIVE", "ENGAGEMENT", "CAMPAIGNS"],
+  DISTRIBUTION_SALES: ["TODAY", "COMMUNITY_LIVE", "DISTRIBUTION", "AUDIENCES"],
   ANALYST: ["TODAY", "IMPACT"],
 };
 
@@ -76,8 +76,8 @@ export function sectionsForRole(role: Role): readonly Section[] {
 }
 
 // Fine-grained Admin capability, independent of top-level section access.
-// OWNER: everything. GROWTH_DIRECTOR: read-only model-config + audit only
-// (docs/ACCESS_CONTROL_MODEL.md Section 4). Everyone else: none.
+// OWNER: everything. GROWTH_DIRECTOR: read-only model-config + audit only.
+// Everyone else: none.
 export function canViewAdminProviders(role: Role): boolean {
   return can(role, "view", "model-config");
 }
@@ -94,8 +94,6 @@ export function canChangeSafeMode(role: Role): boolean {
   return role === "OWNER";
 }
 export function canViewCredentials(): boolean {
-  // Credential *values* are never viewable by any role, including OWNER, in
-  // the UI. See docs/MODEL_CONTROL_PLANE.md Section 4 and the Phase 1
-  // brief's credential architecture section.
+  // Credential values are never viewable by any role, including OWNER, in the UI.
   return false;
 }
