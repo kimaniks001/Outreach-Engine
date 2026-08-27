@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { SecurePayAuthClient } from "@/lib/community/securepay-auth-client";
-import { selectCommunityActor } from "@/lib/community/current-community-actor";
+import { selectCommunityActor } from "@/lib/community/community-actor";
 
 describe("SecurePayAuthClient", () => {
   it("uses the existing KS Number password flow without inventing an Outreach market password", async () => {
