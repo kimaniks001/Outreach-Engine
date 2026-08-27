@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
@@ -47,7 +48,7 @@ export default function LoginPage() {
         <div className="mb-8 text-center">
           <p className="text-sm font-medium uppercase tracking-widest text-brand">SecurePay</p>
           <h1 className="mt-1 text-xl font-semibold text-ink">Outreach Engine</h1>
-          <p className="mt-1 text-sm text-ink-muted">Command Centre sign in</p>
+          <p className="mt-1 text-sm text-ink-muted">Staff Command Centre</p>
         </div>
 
         <form
@@ -102,8 +103,18 @@ export default function LoginPage() {
           </div>
         </form>
 
+        <div className="mt-5 rounded-lg border border-surface-border bg-surface-raised/60 p-4 text-center">
+          <p className="text-xs font-medium text-ink">Part of the Market Network?</p>
+          <p className="mt-1 text-xs leading-5 text-ink-faint">
+            Plugs and other market members enter Community LIVE with their SecurePay KS identity.
+          </p>
+          <Link href="/market-login" className="mt-2 inline-block text-sm font-medium text-brand hover:underline">
+            Enter Community LIVE →
+          </Link>
+        </div>
+
         <p className="mt-6 text-center text-xs text-ink-faint">
-          Internal SecurePay tool. Access is role-restricted and audited.
+          Internal staff access is role-restricted and audited.
         </p>
       </div>
     </main>
