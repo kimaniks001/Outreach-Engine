@@ -2,6 +2,7 @@ export type CommunityVisibility = "PUBLIC" | "PRIVATE";
 export type CommunityMembershipPolicy = "OPEN" | "APPROVAL_REQUIRED";
 export type CommunityStatus = "ACTIVE" | "ARCHIVED";
 export type CommunityMembershipRole = "MEMBER" | "MODERATOR" | "ORGANISER";
+export type CommunityMembershipStatus = "ACTIVE" | "LEFT";
 export type CommunityFeedVisibility = "PUBLIC" | "MEMBER";
 export type CommunityJoinRequestStatus = "PENDING" | "APPROVED" | "REJECTED";
 
@@ -19,30 +20,34 @@ export interface CommunitySummary {
 export interface CommunityDetail extends CommunitySummary {
   rules: string;
   updatedAt: string;
-  callerRole?: CommunityMembershipRole | null;
+  callerRole: CommunityMembershipRole | null;
 }
 
+/**
+ * Privacy-safe projection returned to another member. SecurePayAPI does not
+ * expose KS Number, display name or contact detail here.
+ */
 export interface CommunityMember {
   identityId: string;
   role: CommunityMembershipRole;
   joinedAt: string;
 }
 
+/** Caller-owned membership response from MW-07. */
 export interface CommunityMembership {
-  id: string;
   communityId: string;
-  identityId: string;
   role: CommunityMembershipRole;
+  status: CommunityMembershipStatus;
   joinedAt: string;
 }
 
+/** Caller-owned join request response. Requester identity is not echoed. */
 export interface CommunityJoinRequest {
   id: string;
   communityId: string;
-  identityId: string;
   status: CommunityJoinRequestStatus;
   requestedAt: string;
-  decidedAt?: string | null;
+  decidedAt: string | null;
 }
 
 export interface MyCommunities {
@@ -58,8 +63,8 @@ export interface CommunityFeedPost {
   body: string;
   visibility: CommunityFeedVisibility;
   publishedAt: string;
-  sourceType?: string | null;
-  sourceReferenceId?: string | null;
+  sourceType: string | null;
+  sourceReferenceId: string | null;
 }
 
 export interface PublishCommunityFeedPostInput {
