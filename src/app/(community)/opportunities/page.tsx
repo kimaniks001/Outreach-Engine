@@ -12,6 +12,7 @@ import {
 export default async function OpportunitiesPage() {
   const actor = await requireCommunityActor();
   const authority = await getReadinessAuthority();
+  const live = authority.status === "CONNECTED";
 
   return (
     <div className="mx-auto max-w-6xl space-y-7">
@@ -31,10 +32,14 @@ export default async function OpportunitiesPage() {
         </Link>
       </header>
 
-      <div className="rounded-lg border border-status-warn/25 bg-status-warn/5 p-4">
-        <p className="text-sm font-semibold text-ink">Real matching is not active yet</p>
+      <div className={`rounded-lg border p-4 ${live ? "border-status-good/25 bg-status-good/5" : "border-status-warn/25 bg-status-warn/5"}`}>
+        <p className="text-sm font-semibold text-ink">
+          {live ? "SecurePay capability evidence connected" : "Real matching is not active yet"}
+        </p>
         <p className="mt-1 text-sm leading-6 text-ink-muted">
-          {actor.name} is authenticated, but Outreach has no backend Plug/readiness credential projection yet. {readinessPrinciples.opportunity}
+          {live
+            ? `${actor.name}'s eligibility below is derived only from current backend credentials. Opportunity fulfilment itself remains a later authority.`
+            : `${actor.name} is authenticated, but no live readiness projection is available. ${readinessPrinciples.opportunity}`}
         </p>
       </div>
 
@@ -59,7 +64,7 @@ export default async function OpportunitiesPage() {
                       : "border-surface-border bg-surface text-ink-faint"
                   }`}
                 >
-                  {eligible ? "Eligible" : "Preview only"}
+                  {eligible ? "Capability confirmed" : live ? "Not eligible yet" : "Preview only"}
                 </span>
               </div>
 
@@ -85,10 +90,14 @@ export default async function OpportunitiesPage() {
 
               <button
                 type="button"
-                disabled={!eligible}
+                disabled
                 className="mt-4 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {eligible ? "Open opportunity" : "Locked until authority confirms readiness"}
+                {eligible
+                  ? "Capability confirmed · opportunity authority not built yet"
+                  : live
+                    ? "Build the required capability first"
+                    : "Locked until authority confirms readiness"}
               </button>
             </article>
           );
@@ -99,7 +108,7 @@ export default async function OpportunitiesPage() {
         <p className="text-xs font-medium uppercase tracking-widest text-brand">Matching doctrine</p>
         <h2 className="mt-1 text-lg font-semibold text-ink">Learning should increase commercial possibility</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">
-          A Plug should be able to see the practical value of learning: qualify for another market, help better customers, handle more complex situations and grow a stronger economic territory. But the unlock must be earned and backend-authoritative.
+          A Plug should be able to see the practical value of learning: qualify for another market, help better customers, handle more complex situations and grow a stronger economic territory. But capability and opportunity assignment remain separate backend truths.
         </p>
       </section>
     </div>
