@@ -6,7 +6,6 @@ import { SECUREPAY_ACCESS_COOKIE } from "@/lib/community/securepay-session-names
 // capability checks happen in Node-runtime guards, and Community membership /
 // feed authority is enforced by SecurePayAPI using the caller bearer token.
 
-const PUBLIC_PAGE_PATHS = ["/login", "/market-login"];
 const PUBLIC_API_PATHS = ["/api/auth/login", "/api/auth/logout", "/api/health"];
 const SYSTEM_API_PATHS = ["/api/product-events"];
 const SECUREPAY_AUTH_API_PREFIX = "/api/securepay-auth/";
