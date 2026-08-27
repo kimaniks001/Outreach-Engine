@@ -1,4 +1,5 @@
 import { CommunityLiveExperience } from "@/components/community/CommunityLiveExperience";
+import { CommunityMemberLiveExperience } from "@/components/community/CommunityMemberLiveExperience";
 import { resolveCommunityAuthorityConnection } from "@/lib/community/authority-connection";
 import { requireCommunityActor } from "@/lib/community/current-community-actor";
 
@@ -27,7 +28,11 @@ export default async function CommunityLivePage() {
         </p>
       </div>
 
-      <CommunityLiveExperience currentUserName={actor.name} />
+      {actor.kind === "STAFF" ? (
+        <CommunityLiveExperience currentUserName={actor.name} />
+      ) : (
+        <CommunityMemberLiveExperience currentUserName={actor.name} />
+      )}
     </div>
   );
 }
