@@ -1,7 +1,11 @@
 export interface SecurePayCommunityIdentity {
-  /** SecurePay backend identity id used by MW-07 Community authority. */
-  identityId: string;
-  /** Optional human-facing KS Number; never used to decide Community authority. */
+  /**
+   * SecurePay backend identity id when an identity/profile projection is available.
+   * The Community API itself derives identity from the bearer token, so Outreach
+   * must not decode or invent this value merely to call MW-07.
+   */
+  identityId?: string;
+  /** Optional human-facing KS Number. Display hint only; never Community authority. */
   ksNumber?: string;
   /** Caller-scoped bearer token. Never replace with an Outreach service token. */
   accessToken: string;
@@ -10,26 +14,14 @@ export interface SecurePayCommunityIdentity {
 /**
  * Boundary between Outreach authentication and SecurePay identity.
  *
- * The current Outreach Engine authenticates internal staff independently.
- * Plugs/Masters should eventually arrive here through SecurePay/KS identity,
- * not through a second parallel identity store invented by Outreach.
+ * Internal staff continue to use Outreach staff auth. Market-network people
+ * enter through SecurePay/KS identity rather than a second Outreach password
+ * store. Community authority is always derived by SecurePay from this token.
  */
 export interface SecurePayIdentityBridge {
   getCurrentIdentity(): Promise<SecurePayCommunityIdentity | null>;
 }
 
-export class SecurePayIdentityBridgeUnavailableError extends Error {
-  constructor() {
-    super("SecurePay identity bridge is not connected");
-    this.name = "SecurePayIdentityBridgeUnavailableError";
-  }
-}
-
-/**
- * Explicit placeholder used until the caller-scoped SecurePay session bridge
- * is implemented. It fails closed instead of pretending the current Outreach
- * staff session is a SecurePay Community identity.
- */
 export const unavailableSecurePayIdentityBridge: SecurePayIdentityBridge = {
   async getCurrentIdentity() {
     return null;
