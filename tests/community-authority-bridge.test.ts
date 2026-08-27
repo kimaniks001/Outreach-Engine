@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { CommunityAuthorityError, canSeeMemberOnlyFeed, mayModerateCommunity } from "@/lib/community/authority";
+import { resolveCommunityAuthorityConnection } from "@/lib/community/authority-connection";
 import { SecurePayCommunityClient } from "@/lib/community/securepay-community-client";
+import type { SecurePayIdentityBridge } from "@/lib/community/identity-bridge";
 
 describe("Community authority role semantics", () => {
   it("keeps moderation scoped to backend ORGANISER/MODERATOR roles", () => {
@@ -15,6 +17,51 @@ describe("Community authority role semantics", () => {
     expect(canSeeMemberOnlyFeed("MODERATOR")).toBe(true);
     expect(canSeeMemberOnlyFeed("ORGANISER")).toBe(true);
     expect(canSeeMemberOnlyFeed(undefined)).toBe(false);
+  });
+});
+
+describe("Community authority connection", () => {
+  it("fails closed when the SecurePay API base URL is missing", async () => {
+    const bridge: SecurePayIdentityBridge = {
+      async getCurrentIdentity() {
+        throw new Error("identity bridge should not be called without a base URL");
+      },
+    };
+
+    await expect(resolveCommunityAuthorityConnection(bridge, " ")).resolves.toMatchObject({
+      status: "BASE_URL_UNCONFIGURED",
+    });
+  });
+
+  it("fails closed when there is no caller-scoped SecurePay identity", async () => {
+    const bridge: SecurePayIdentityBridge = {
+      async getCurrentIdentity() {
+        return null;
+      },
+    };
+
+    await expect(
+      resolveCommunityAuthorityConnection(bridge, "https://securepay.test")
+    ).resolves.toMatchObject({ status: "IDENTITY_BRIDGE_UNAVAILABLE" });
+  });
+
+  it("connects only when the caller identity and token are supplied", async () => {
+    const bridge: SecurePayIdentityBridge = {
+      async getCurrentIdentity() {
+        return {
+          identityId: "identity-1",
+          ksNumber: "KS-DEMO-1",
+          accessToken: "caller-token",
+        };
+      },
+    };
+
+    const result = await resolveCommunityAuthorityConnection(bridge, "https://securepay.test");
+    expect(result.status).toBe("CONNECTED");
+    if (result.status === "CONNECTED") {
+      expect(result.identity.identityId).toBe("identity-1");
+      expect(result.client).toBeInstanceOf(SecurePayCommunityClient);
+    }
   });
 });
 
