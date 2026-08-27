@@ -97,11 +97,18 @@ describe("My Market reward evidence", () => {
   });
 
   it("fails closed rather than combine mixed currencies", () => {
+    const base = history().relationships;
+    const first = base[0];
+    const second = base[1];
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    if (!first || !second) throw new Error("test fixture missing relationships");
+
     const mixed = history({
       relationships: [
-        history().relationships[0],
+        first,
         {
-          ...history().relationships[1],
+          ...second,
           status: "QUALIFIED",
           rewardAmountMinor: 500,
           rewardCurrency: "USD",
