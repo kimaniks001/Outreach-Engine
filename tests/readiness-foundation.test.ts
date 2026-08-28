@@ -56,7 +56,7 @@ describe("market readiness foundation", () => {
 });
 
 describe("readiness authority", () => {
-  it("fails closed while SecurePay has no Plug/readiness credential contract", async () => {
+  it("fails closed while SecurePay readiness authority is unavailable for the session", async () => {
     const result = await getReadinessAuthority();
 
     expect(result.status).toBe("UNAVAILABLE");
@@ -67,7 +67,7 @@ describe("readiness authority", () => {
   it("accepts only CURRENT backend credentials for real opportunity eligibility", () => {
     const projection: AuthoritativeReadinessProjection = {
       source: "BACKEND",
-      plugStatus: "MARKET_READY",
+      marketReadinessStatus: "MARKET_READY",
       credentials: [
         {
           credentialId: "cred-market-ready",
@@ -88,6 +88,7 @@ describe("readiness authority", () => {
       ],
     };
 
+    expect(projection.marketReadinessStatus).toBe("MARKET_READY");
     expect(hasCurrentCredential(projection, "Market Ready")).toBe(true);
     expect(hasCurrentCredential(projection, "Property Specialist")).toBe(false);
     expect(
