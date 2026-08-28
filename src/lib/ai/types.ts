@@ -1,8 +1,7 @@
 import type { AITaskType } from "./task-types";
 
-// Core AI Gateway vocabulary, matching the Phase 1 brief Section 12 exactly,
-// and docs/MODEL_CONTROL_PLANE.md. Nothing in this file makes a network
-// call — it is pure typed contract.
+// Core AI Gateway vocabulary. Nothing in this file makes a network call — it
+// is the typed contract used by the governed Model Control Plane.
 
 export const AI_PROVIDER_STATUSES = [
   "NOT_CONFIGURED",
@@ -46,9 +45,11 @@ export interface AIExecutionRequest {
   requiredCapability?: string;
   correlationId: string;
   requestedByUserId: string;
-  // Phase 2: the actual structured prompt contract for a real (or mock)
-  // execution. Optional because Phase 1-style probing calls (e.g. the
-  // Admin routing explainer) don't need to execute anything.
+  // Studio may ask for a particular approved model. This is a preference
+  // constrained by the registry, never an override: if the model is not
+  // currently routable for this task the Gateway fails closed rather than
+  // silently calling it or falling back to an unapproved model.
+  preferredModelId?: string;
   prompt?: { system?: string; user: string };
   maxOutputTokens?: number;
 }
@@ -85,10 +86,6 @@ export type AIExecutionResult =
       usageRecordId: string;
     }
   | {
-      // Phase 5 — docs/PHASE_5_MODEL_PERFORMANCE_AND_COST.md Section 28.
-      // Routing succeeded but an active hard AI budget cap for this
-      // provider/model/task-type/global scope is already met or exceeded.
-      // Fails safely — never silently falls back to an unbudgeted call.
       outcome: "BUDGET_EXCEEDED";
       selectedProvider: AIProvider;
       selectedModel: AIModel;

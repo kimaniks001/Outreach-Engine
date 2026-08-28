@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { runStructuredTask, type StructuredTaskResult } from "./run-structured-task";
 
-// docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md Sections 16-18. Image-first,
-// not image-only: this produces creative BRIEFS (headline/body/CTA/image
-// concept), never a generated image. Max 3 variants per generation action.
+// Image-first, not image-only: this produces creative BRIEFS
+// (headline/body/CTA/image concept), never a generated image. Actual image,
+// video and audio generation use their own Studio task lanes once an approved
+// provider/model supports them.
 
 const variantSchema = z.object({
   variantLabel: z.string().min(1),
@@ -31,9 +32,10 @@ export interface GenerateCreativeInput {
     cta: string;
   };
   requestedByUserId: string;
+  preferredModelId?: string;
 }
 
-const SYSTEM_PROMPT = `You are the Content & Creative Studio for the SecurePay Outreach Engine. Strategy is image-first, not image-only.
+const SYSTEM_PROMPT = `You are working inside the Content & Creative Studio for the SecurePay Outreach Engine. Strategy is image-first, not image-only.
 
 SecurePay's core positioning (never violate): "Money should follow the agreement." / "SecurePay is the agreement layer for money." Never describe SecurePay as a wallet, bank, M-PESA competitor, ordinary payment app, or escrow product.
 
@@ -67,15 +69,11 @@ export async function generateCreativeVariantsViaAI(
     userPrompt: buildUserPrompt(input.campaign),
     schema: variantsResponseSchema,
     requestedByUserId: input.requestedByUserId,
+    preferredModelId: input.preferredModelId,
     maxOutputTokens: 1500,
   });
 }
 
-// Always-available fallback — Phase 2 brief Section 16: "Phase 2 succeeds
-// if it can produce a high-quality IMAGE CREATIVE BRIEF even before
-// automated image generation is wired... Do not let image-generation
-// integration become the blocker." Used whenever AI is unavailable,
-// malformed, or errors, so Creative Studio never simply fails.
 export function buildDeterministicVariants(
   campaign: GenerateCreativeInput["campaign"]
 ): CreativeVariantDraft[] {
