@@ -19,22 +19,35 @@ export type RoutingDecision =
       reason: string;
     };
 
-// Pure, deterministic, explainable — see the Phase 1 brief Section 15.
-// Never falls back to an unapproved/unavailable provider; if nothing
-// qualifies it returns NO_AVAILABLE_MODEL rather than guessing. No
-// self-optimization: Phase 1 does not learn from past outcomes.
-//
-// Rule: prefer the highest quality_score; tie-break on lowest input cost;
-// tie-break again on model key for stability. All three fields are
-// optional, so candidates missing them sort after ones that have them.
+// Pure, deterministic and explainable. Never falls back to an unapproved or
+// unavailable provider. When Studio asks for a preferred model, that model
+// must already be in the registry's routable set for the task; preference is
+// not an authority bypass.
 export function selectModel(
   candidates: RoutingCandidate[],
-  taskType: AITaskType
+  taskType: AITaskType,
+  preferredModelId?: string
 ): RoutingDecision {
   if (candidates.length === 0) {
     return {
       outcome: "NO_AVAILABLE_MODEL",
       reason: `No approved, enabled model from an AVAILABLE provider supports task type ${taskType}.`,
+    };
+  }
+
+  if (preferredModelId) {
+    const preferred = candidates.find(({ model }) => model.id === preferredModelId);
+    if (!preferred) {
+      return {
+        outcome: "NO_AVAILABLE_MODEL",
+        reason: `Preferred model is not currently approved and AVAILABLE for task type ${taskType}.`,
+      };
+    }
+    return {
+      outcome: "SELECTED",
+      model: preferred.model,
+      provider: preferred.provider,
+      reason: `Selected ${preferred.provider.displayName}/${preferred.model.displayName}: explicitly chosen in Studio and currently approved for ${taskType}.`,
     };
   }
 
@@ -58,7 +71,10 @@ export function selectModel(
   };
 }
 
-export async function routeTask(taskType: AITaskType): Promise<RoutingDecision> {
+export async function routeTask(
+  taskType: AITaskType,
+  preferredModelId?: string
+): Promise<RoutingDecision> {
   const candidates = await listRoutableModelsForTask(taskType);
-  return selectModel(candidates, taskType);
+  return selectModel(candidates, taskType, preferredModelId);
 }
