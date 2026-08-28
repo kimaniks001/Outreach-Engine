@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { db, schema } from "@/lib/db";
 import { createSignal } from "@/lib/intelligence/signals";
 import { analyzeSignalAndCreateOpportunity, reviewOpportunity } from "@/lib/intelligence/opportunities";
 import { createCampaignFromOpportunity } from "@/lib/campaigns/campaigns";
 import { approveAndReleaseCampaign } from "./support/market-release-fixture";
+import { releaseMarketAsset } from "@/lib/assets/market-assets";
 import { createAudienceSegment, reviewAudienceSegment } from "@/lib/audience/segments";
 import { ProhibitedTargetingError } from "@/lib/audience/targeting-guard";
 import {
@@ -55,6 +56,60 @@ async function createReadyCampaign(ownerId: string) {
     ownerId
   );
   return approveAndReleaseCampaign(campaign.id, ownerId);
+}
+
+// Launch-success fixtures must now prove the complete publication authority
+// chain. The creative is created before final Market Release so the release
+// fingerprint covers the exact content that is later minted into a Market
+// Asset. This helper is intentionally used only by execution-success tests;
+// older negative budget/approval tests remain free to fail at their intended
+// earlier gate.
+async function createReadyCampaignWithMarketAsset(ownerId: string) {
+  const signal = await createSignal(
+    { title: `Phase 4 distribution source ${randomUUID()}`, summary: "x", signalType: "MANUAL" },
+    ownerId
+  );
+  const analysis = await analyzeSignalAndCreateOpportunity(signal.id, ownerId);
+  if (!analysis.ok) throw new Error("setup: analysis failed");
+  await reviewOpportunity(analysis.opportunity.id, "APPROVE", ownerId);
+
+  const campaign = await createCampaignFromOpportunity(
+    {
+      opportunityId: analysis.opportunity.id,
+      name: `Phase 4 distribution campaign ${randomUUID()}`,
+      objective: "Test authorised execution",
+      targetAudience: "Testers",
+      positioningAngle: "Agreement-led",
+      coreMessage: "Money should follow the agreement.",
+      cta: "Learn more",
+    },
+    ownerId
+  );
+
+  const [variant] = await db
+    .insert(schema.creativeVariants)
+    .values({
+      campaignId: campaign.id,
+      variantLabel: "A",
+      angle: "Agreement first",
+      headline: "Agree first. Then let the money follow.",
+      body: "Set out what should happen, confirm it clearly, then let the money follow the agreement.",
+      cta: "Learn more",
+      imageConcept: "Two traders confirming a clear agreement before payment moves",
+      rationale: "Keeps agreement clarity ahead of payment.",
+      brandGuardianStatus: "PASS",
+      createdByUserId: ownerId,
+    })
+    .returning();
+
+  const releasedCampaign = await approveAndReleaseCampaign(campaign.id, ownerId);
+  await releaseMarketAsset(
+    { campaignId: releasedCampaign.id, creativeVariantId: variant!.id, kind: "SOCIAL_POST" },
+    ownerId,
+    "OWNER"
+  );
+
+  return { campaign: releasedCampaign, variant: variant! };
 }
 
 async function createApprovedAudience(ownerId: string, campaignId: string) {
@@ -134,7 +189,7 @@ describe("Brand Guardian gate: no distribution plan may become READY without a p
         audienceSegmentId: segment!.id,
         objective: "Test",
         channel: "GOOGLE_SEARCH",
-        channelStrategy: "SecurePay is an escrow wallet.", // deliberately violates positioning
+        channelStrategy: "SecurePay is an escrow wallet.",
         cta: "Get the wallet",
       },
       ownerId
@@ -142,7 +197,6 @@ describe("Brand Guardian gate: no distribution plan may become READY without a p
 
     const outcome = await runDistributionPlanBrandGuardian(plan.id, ownerId);
     expect(outcome.result).toBe("BLOCK");
-
     await expect(reviewDistributionPlan(plan.id, "APPROVE", ownerId)).rejects.toThrow();
   });
 
@@ -166,7 +220,6 @@ describe("Brand Guardian gate: no distribution plan may become READY without a p
     await runDistributionPlanBrandGuardian(plan.id, ownerId);
     const approved = await reviewDistributionPlan(plan.id, "APPROVE", ownerId);
     expect(approved?.status).toBe("APPROVED");
-
     await expect(markDistributionPlanReady(plan.id, ownerId)).rejects.toThrow(PlanNotReadyError);
   });
 });
@@ -189,7 +242,6 @@ describe("budget guard", () => {
     );
     await runDistributionPlanBrandGuardian(plan.id, ownerId);
     await reviewDistributionPlan(plan.id, "APPROVE", ownerId);
-
     await expect(markDistributionPlanReady(plan.id, ownerId)).rejects.toThrow(PlanNotReadyError);
   });
 
@@ -250,21 +302,16 @@ describe("budget guard", () => {
     await runDistributionPlanBrandGuardian(plan.id, ownerId);
     await reviewDistributionPlan(plan.id, "APPROVE", ownerId);
 
-    // Propose a new budget on an APPROVED plan — must revert to
-    // AWAITING_APPROVAL, not silently keep the old approval alive.
     await proposeBudget({ distributionPlanId: plan.id, plannedBudget: 150, currency: "USD" }, ownerId);
     const [reset] = await db.select().from(schema.distributionPlans).where(eq(schema.distributionPlans.id, plan.id)).limit(1);
     expect(reset!.status).toBe("AWAITING_APPROVAL");
-
-    // The plan reverted to AWAITING_APPROVAL (re-approval required) — it
-    // can no longer be marked READY until it is re-approved.
     await expect(markDistributionPlanReady(plan.id, ownerId)).rejects.toThrow(PlanNotReadyError);
   });
 });
 
 describe("execution: preconditions, Safe Mode, and audit", () => {
   async function buildReadyPlan(ownerId: string) {
-    const campaign = await createReadyCampaign(ownerId);
+    const { campaign, variant } = await createReadyCampaignWithMarketAsset(ownerId);
     const segment = await createApprovedAudience(ownerId, campaign.id);
     const plan = await createDistributionPlan(
       {
@@ -273,6 +320,7 @@ describe("execution: preconditions, Safe Mode, and audit", () => {
         objective: "Test",
         channel: "GOOGLE_SEARCH",
         channelStrategy: "Agree on the milestone. Let the money follow.",
+        creativeVariantIds: [variant.id],
         cta: "Learn more",
       },
       ownerId
@@ -312,7 +360,6 @@ describe("execution: preconditions, Safe Mode, and audit", () => {
     if (outcome.outcome !== "LAUNCHED") return;
 
     expect(outcome.externalExecutionId).toMatch(/^sim_/);
-
     const [execution] = await db
       .select()
       .from(schema.distributionExecutions)
@@ -338,7 +385,6 @@ describe("execution: preconditions, Safe Mode, and audit", () => {
       const outcome = await DistributionGateway.launch(plan!.id, ownerId);
       expect(outcome.outcome).toBe("SAFE_MODE_BLOCKED");
 
-      // Planning/editing remains allowed while Safe Mode is active.
       const updated = await updateDistributionPlan(plan!.id, { objective: "Updated while Safe Mode is active" });
       expect(updated?.objective).toBe("Updated while Safe Mode is active");
 
