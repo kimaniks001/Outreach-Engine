@@ -2,54 +2,13 @@
   "version": "7",
   "dialect": "postgresql",
   "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1786398246981,
-      "tag": "0000_outstanding_wolf_cub",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1786399721973,
-      "tag": "0001_yielding_chamber",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1786423434226,
-      "tag": "0002_remarkable_betty_brant",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1786424078762,
-      "tag": "0003_shiny_the_hand",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1786424130577,
-      "tag": "0004_orange_gauntlet",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1786427383420,
-      "tag": "0005_spotty_strong_guy",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1786442745428,
-      "tag": "0006_perfect_thor_girl",
-      "breakpoints": true
-    }
+    { "idx": 0, "version": "7", "when": 1786398246981, "tag": "0000_outstanding_wolf_cub", "breakpoints": true },
+    { "idx": 1, "version": "7", "when": 1786399721973, "tag": "0001_yielding_chamber", "breakpoints": true },
+    { "idx": 2, "version": "7", "when": 1786423434226, "tag": "0002_remarkable_betty_brant", "breakpoints": true },
+    { "idx": 3, "version": "7", "when": 1786424078762, "tag": "0003_shiny_the_hand", "breakpoints": true },
+    { "idx": 4, "version": "7", "when": 1786424130577, "tag": "0004_orange_gauntlet", "breakpoints": true },
+    { "idx": 5, "version": "7", "when": 1786427383420, "tag": "0005_spotty_strong_guy", "breakpoints": true },
+    { "idx": 6, "version": "7", "when": 1786442745428, "tag": "0006_perfect_thor_girl", "breakpoints": true },
+    { "idx": 7, "version": "7", "when": 1787900000000, "tag": "0007_market_release_provenance", "breakpoints": true }
   ]
 }
