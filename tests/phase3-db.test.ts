@@ -4,7 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, schema } from "@/lib/db";
 import { createSignal } from "@/lib/intelligence/signals";
 import { analyzeSignalAndCreateOpportunity, reviewOpportunity } from "@/lib/intelligence/opportunities";
-import { createCampaignFromOpportunity, runCampaignBrandGuardian, reviewCampaign } from "@/lib/campaigns/campaigns";
+import { createCampaignFromOpportunity } from "@/lib/campaigns/campaigns";
+import { approveAndReleaseCampaign } from "./support/market-release-fixture";
 import { createAudienceSegment, reviewAudienceSegment } from "@/lib/audience/segments";
 import { ProhibitedTargetingError } from "@/lib/audience/targeting-guard";
 import {
@@ -30,9 +31,9 @@ async function getOwnerId(): Promise<string> {
   return owner.id;
 }
 
-// Drives a fresh campaign to READY_FOR_DISTRIBUTION via the real Phase 2
-// service functions, so Phase 3 tests build on a genuinely valid precondition
-// rather than a shortcut insert.
+// Drives a fresh campaign through the real Phase 2 sourced market-release
+// chain so Phase 3 tests build on a genuinely valid precondition rather than
+// assuming campaign approval itself is distribution authority.
 async function createReadyCampaign(ownerId: string) {
   const signal = await createSignal(
     { title: `Phase 3 source signal ${randomUUID()}`, summary: "x", signalType: "MANUAL" },
@@ -53,10 +54,7 @@ async function createReadyCampaign(ownerId: string) {
     },
     ownerId
   );
-  await runCampaignBrandGuardian(campaign.id, ownerId);
-  const approved = await reviewCampaign(campaign.id, "APPROVE", ownerId);
-  if (approved?.status !== "READY_FOR_DISTRIBUTION") throw new Error("setup: campaign not READY_FOR_DISTRIBUTION");
-  return approved;
+  return approveAndReleaseCampaign(campaign.id, ownerId);
 }
 
 async function createApprovedAudience(ownerId: string, campaignId: string) {
