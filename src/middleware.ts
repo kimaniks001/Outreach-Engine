@@ -8,9 +8,9 @@ import {
 // Edge-runtime middleware. This remains only a fast UX gate. Real staff
 // capability checks happen in Node-runtime guards, and Community / My Market
 // authority is enforced by SecurePayAPI using the caller bearer token.
-// Learn / Opportunities / My Market are part of the same market-network shell,
-// but a valid session does not itself establish Plug, Market Ready, specialist,
-// referral-reward or financial authority.
+// Learn / Opportunities / My Market / Market Kit are part of the same
+// market-network shell, but a valid session does not itself establish Plug,
+// Market Ready, specialist, referral-reward or financial authority.
 
 const PUBLIC_API_PATHS = ["/api/auth/login", "/api/auth/logout", "/api/health"];
 const SYSTEM_API_PATHS = ["/api/product-events"];
@@ -23,6 +23,8 @@ function isCommunityPath(pathname: string): boolean {
     pathname === "/my-market" ||
     pathname === "/learn" ||
     pathname === "/opportunities" ||
+    pathname === "/market-entry" ||
+    pathname === "/market-kit" ||
     pathname === "/circles" ||
     pathname.startsWith("/circles/")
   );
