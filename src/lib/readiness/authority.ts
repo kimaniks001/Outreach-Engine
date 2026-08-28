@@ -18,7 +18,7 @@ export interface AuthoritativeCredential {
 
 export interface AuthoritativeReadinessProjection {
   source: "BACKEND";
-  plugStatus: "NOT_A_PLUG" | "IN_TRAINING" | "MARKET_READY" | "EXPERIENCED";
+  marketReadinessStatus: "IN_TRAINING" | "MARKET_READY";
   credentials: AuthoritativeCredential[];
 }
 
@@ -61,7 +61,7 @@ export async function getReadinessAuthority(): Promise<ReadinessAuthorityResult>
         source: "BACKEND",
         // MARKET_READY proves current readiness only. It does not itself prove
         // the wider commercial/legal definition of a Plug or Experienced Plug.
-        plugStatus: profile.marketReady ? "MARKET_READY" : "IN_TRAINING",
+        marketReadinessStatus: profile.marketReady ? "MARKET_READY" : "IN_TRAINING",
         credentials,
       },
       reason:
