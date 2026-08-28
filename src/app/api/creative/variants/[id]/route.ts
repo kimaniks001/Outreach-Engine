@@ -29,10 +29,10 @@ const updateSchema = z.object({
   rationale: z.string().min(1).optional(),
 }).strict();
 
-// Creative copy editing = content authority. Before mutating the current
-// draft, Studio records the previous values in the append-only audit log so
-// human revision history is recoverable even before the later Asset Library
-// introduces full immutable asset-version records.
+// Creative copy editing = content authority. The previous values are kept in
+// the append-only audit trail. Any edit also invalidates the mutable campaign
+// approval state; old release records remain immutable historical evidence but
+// no longer match the current content fingerprint.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { user, response } = await requireApiUser();
   if (response) return response;
@@ -53,11 +53,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const [variant] = await db
     .update(schema.creativeVariants)
-    .set({ ...parsed.data, updatedAt: new Date() })
+    .set({ ...parsed.data, brandGuardianStatus: "NOT_REVIEWED", updatedAt: new Date() })
     .where(eq(schema.creativeVariants.id, id))
     .returning();
 
   if (!variant) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+
+  await db
+    .update(schema.campaigns)
+    .set({ brandGuardianStatus: "NOT_REVIEWED", status: "DRAFT", updatedAt: new Date() })
+    .where(eq(schema.campaigns.id, before.campaignId));
 
   await recordAuditEvent({
     eventType: "CREATIVE_REVISED",
@@ -65,6 +70,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     targetType: "creative_variant",
     targetId: id,
     metadata: {
+      campaignId: before.campaignId,
       before: {
         headline: before.headline,
         body: before.body,
@@ -73,6 +79,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         rationale: before.rationale,
       },
       changedFields: Object.keys(parsed.data),
+      marketApprovalInvalidated: true,
     },
   });
 

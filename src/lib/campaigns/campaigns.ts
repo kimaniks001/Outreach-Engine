@@ -44,8 +44,8 @@ export async function createCampaignFromOpportunity(input: CreateCampaignInput, 
       cta: input.cta,
       destinationConcept: input.destinationConcept ?? null,
       creativeBrief: input.creativeBrief ?? null,
-      riskLevel: "HIGH", // public campaigns are HIGH risk by default — docs/AI_GOVERNANCE.md Section 4
-      status: "DRAFT", // Phase 2 creation flow starts at DRAFT, not the "IDEA" pre-stage — see docs
+      riskLevel: "HIGH",
+      status: "DRAFT",
       isDemo: opportunity.isDemo,
       createdByUserId: actorUserId,
     })
@@ -83,18 +83,26 @@ export interface UpdateCampaignStrategyInput {
   creativeBrief?: string | null;
 }
 
+// Any market-facing content edit invalidates the previous review chain. The
+// append-only approval/release evidence remains for audit, but the mutable
+// campaign returns to DRAFT and must pass Brand Guardian + human gates again.
 export async function updateCampaignStrategy(id: string, input: UpdateCampaignStrategyInput) {
   const [row] = await db
     .update(schema.campaigns)
-    .set({ ...input, updatedAt: new Date() })
+    .set({
+      ...input,
+      brandGuardianStatus: "NOT_REVIEWED",
+      status: "DRAFT",
+      updatedAt: new Date(),
+    })
     .where(eq(schema.campaigns.id, id))
     .returning();
   return row ?? null;
 }
 
-// docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md Section 13/14. The
-// deterministic rule engine result is always authoritative; campaign.status
-// moves to AWAITING_APPROVAL on PASS, NEEDS_REVISION on REVISE/BLOCK.
+// The deterministic rule-engine result is always authoritative. PASS moves
+// the campaign to AWAITING_APPROVAL, but that is only the start of the human
+// approval chain; it is not permission to distribute.
 export async function runCampaignBrandGuardian(campaignId: string, actorUserId: string) {
   const campaign = await getCampaign(campaignId);
   if (!campaign) throw new Error("Campaign not found");
@@ -143,6 +151,10 @@ export async function runCampaignBrandGuardian(campaignId: string, actorUserId: 
 
 export type CampaignReviewAction = "APPROVE" | "REJECT" | "REVISION_REQUESTED";
 
+// Legacy campaign-review helper retained for existing callers. An APPROVE
+// can now move only to APPROVED — never READY_FOR_DISTRIBUTION. The Phase 2
+// market-release authority requires sourced Brand & Claims evidence plus
+// Compliance/Legal where required before a separate final release.
 export async function reviewCampaign(
   campaignId: string,
   action: CampaignReviewAction,
@@ -153,8 +165,6 @@ export async function reviewCampaign(
   if (!campaign) throw new Error("Campaign not found");
 
   if (action === "APPROVE") {
-    // Cannot become approved without a passing Brand Guardian review — see
-    // the Phase 2 brief Section 30 test requirement.
     if (campaign.brandGuardianStatus !== "PASS") {
       throw new Error("Campaign cannot be approved without a passing Brand Guardian review.");
     }
@@ -163,12 +173,8 @@ export async function reviewCampaign(
     }
   }
 
-  // Approval is the terminal Phase 2 action — it moves straight to
-  // READY_FOR_DISTRIBUTION (no separate resting APPROVED state; see
-  // docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md Section 14). No
-  // distribution execution exists anywhere in this codebase.
   const nextStatus =
-    action === "APPROVE" ? "READY_FOR_DISTRIBUTION" : action === "REJECT" ? "REJECTED" : "NEEDS_REVISION";
+    action === "APPROVE" ? "APPROVED" : action === "REJECT" ? "REJECTED" : "NEEDS_REVISION";
 
   const [row] = await db
     .update(schema.campaigns)
