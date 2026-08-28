@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import { db, schema } from "@/lib/db";
 import { createSignal } from "@/lib/intelligence/signals";
 import { analyzeSignalAndCreateOpportunity, reviewOpportunity } from "@/lib/intelligence/opportunities";
-import { createCampaignFromOpportunity, runCampaignBrandGuardian, reviewCampaign } from "@/lib/campaigns/campaigns";
+import { createCampaignFromOpportunity } from "@/lib/campaigns/campaigns";
+import { approveAndReleaseCampaign } from "./support/market-release-fixture";
 import { resolveProfile } from "@/lib/commercial-memory/identity";
 import { recordTouchpoint } from "@/lib/commercial-memory/touchpoints";
 import { recordConversionEvent } from "@/lib/attribution/conversions";
@@ -27,10 +28,7 @@ async function createReadyCampaign(ownerId: string) {
     { opportunityId: analysis.opportunity.id, name: `Phase 5 impact campaign ${randomUUID()}`, objective: "Test", targetAudience: "Testers", positioningAngle: "Agreement-led", coreMessage: "Money should follow the agreement.", cta: "Learn more" },
     ownerId
   );
-  await runCampaignBrandGuardian(campaign.id, ownerId);
-  const approved = await reviewCampaign(campaign.id, "APPROVE", ownerId);
-  if (approved?.status !== "READY_FOR_DISTRIBUTION") throw new Error("setup: campaign not READY_FOR_DISTRIBUTION");
-  return approved;
+  return approveAndReleaseCampaign(campaign.id, ownerId);
 }
 
 describe("computeCampaignScorecard: metrics match underlying events, no fabrication", () => {
