@@ -66,6 +66,20 @@ export function ReadinessAssessment({
     }
   }
 
+  const passedHeading =
+    credentialState === "CURRENT"
+      ? `Your ${program.title} status remains current.`
+      : credentialState === "REFRESH_DUE"
+        ? `Your ${program.title} status is current again.`
+        : `You're ${program.title}.`;
+
+  const passedDetail =
+    credentialState === "CURRENT"
+      ? "This review did not create a second credential."
+      : credentialState === "REFRESH_DUE"
+        ? "SecurePay recorded current-version credential evidence from this passing check."
+        : "SecurePay recorded credential evidence from this passing check.";
+
   return (
     <section className="rounded-xl border border-surface-border bg-surface-raised p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -82,6 +96,9 @@ export function ReadinessAssessment({
           <p className="mt-2 text-sm leading-6 text-ink-muted">{program.description}</p>
           <p className="mt-2 text-xs text-ink-faint">
             Version {program.version} · {program.questions.length} questions · pass {program.passScore}/{program.questions.length}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-ink-faint">
+            Practice is for learning why. This credential check is for proving the current fundamentals; SecurePay scores it on the backend and does not expose the answer key here.
           </p>
         </div>
         <button
@@ -134,9 +151,9 @@ export function ReadinessAssessment({
                   : "border-status-warn/30 bg-status-warn/10 text-ink"
               }`}
             >
-              <p className="font-semibold">{result.passed ? "You passed this check." : "Nearly there."}</p>
+              <p className="font-semibold">{result.passed ? passedHeading : "Nearly there."}</p>
               <p className="mt-1 text-ink-muted">
-                {result.score}/{result.totalQuestions} correct. {result.passed ? "SecurePay issued the credential evidence." : "Review the scenarios and try again when ready."}
+                {result.score}/{result.totalQuestions} correct. {result.passed ? passedDetail : "Go back to the practice scenarios, understand the missed idea and try again when ready."}
               </p>
             </div>
           )}
