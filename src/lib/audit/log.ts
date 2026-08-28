@@ -15,7 +15,6 @@ export const AUDIT_EVENT_TYPES = [
   "MODEL_CONFIG_CHANGED",
   "SAFE_MODE_CHANGED",
   "AI_EXECUTION",
-  // Phase 2 — Intelligence, Studio, Brand/Claims and market release
   "SIGNAL_CREATED",
   "EVIDENCE_ADDED",
   "EVIDENCE_REVIEWED",
@@ -31,10 +30,8 @@ export const AUDIT_EVENT_TYPES = [
   "CLAIM_SOURCE_ATTACHED",
   "CAMPAIGN_MARKET_REVIEWED",
   "CAMPAIGN_RELEASED_TO_MARKET",
-  // Completion Phase 3 — authoritative Asset Library + Plug Market Kit
   "MARKET_ASSET_RELEASED",
   "MARKET_ASSET_STATE_CHANGED",
-  // Phase 3 — docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md
   "AUDIENCE_CREATED",
   "AUDIENCE_CLASSIFIED",
   "AUDIENCE_REVIEWED",
@@ -49,11 +46,8 @@ export const AUDIT_EVENT_TYPES = [
   "EXECUTION_FAILED",
   "EXECUTION_CANCELLED",
   "SAFE_MODE_BLOCKED_EXECUTION",
-  // Completion Phase 4 — current Market Asset authority and execution
-  // policy are re-checked immediately before provider execution.
   "DISTRIBUTION_ASSET_AUTHORITY_BLOCKED",
   "DISTRIBUTION_EXECUTION_POLICY_BLOCKED",
-  // Phase 4 — docs/PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md
   "PROFILE_CREATED",
   "PROFILE_LINKED",
   "PROFILE_MERGED",
@@ -74,7 +68,6 @@ export const AUDIT_EVENT_TYPES = [
   "ATTRIBUTION_CREATED",
   "NEXT_BEST_ACTION_CHANGED",
   "RETARGETING_ELIGIBILITY_CHANGED",
-  // Phase 5 — docs/PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md
   "EXPERIMENT_CREATED",
   "EXPERIMENT_STARTED",
   "EXPERIMENT_COMPLETED",
@@ -94,6 +87,10 @@ export const AUDIT_EVENT_TYPES = [
   "AI_BUDGET_EXCEEDED",
   "RETENTION_REVIEWED",
   "PROFILE_ANONYMIZED",
+  // Completion Phase 5 — market-facing evidence closes the loop without
+  // claiming that feedback or asset use is itself a conversion.
+  "MARKET_INSIGHT_RECORDED",
+  "MARKET_KIT_USAGE_RECORDED",
 ] as const;
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
 
@@ -106,9 +103,6 @@ export interface RecordAuditEventInput {
   metadata?: Record<string, unknown>;
 }
 
-// Append-only by convention: no update/delete helpers exist for this table.
-// Never pass secret values in `metadata` — see docs/AUDIT_AND_CONTROL.md
-// Section 3 ("do not log secrets").
 export async function recordAuditEvent(input: RecordAuditEventInput): Promise<void> {
   await db.insert(schema.auditEvents).values({
     eventType: input.eventType,
@@ -132,7 +126,7 @@ export interface AuditEventRow {
 }
 
 export async function listRecentAuditEvents(limit = 100): Promise<AuditEventRow[]> {
-  const rows = await db
+  return db
     .select({
       id: schema.auditEvents.id,
       eventType: schema.auditEvents.eventType,
@@ -147,12 +141,8 @@ export async function listRecentAuditEvents(limit = 100): Promise<AuditEventRow[
     .leftJoin(schema.users, eq(schema.auditEvents.actorUserId, schema.users.id))
     .orderBy(desc(schema.auditEvents.createdAt))
     .limit(limit);
-
-  return rows;
 }
 
-// Used by the Today dashboard to show honest, non-fabricated counts (e.g.
-// blocked Safe Mode execution attempts) without pulling full event rows.
 export async function countAuditEventsByType(eventType: AuditEventType): Promise<number> {
   const rows = await db
     .select({ count: sql<number>`count(*)::int` })
