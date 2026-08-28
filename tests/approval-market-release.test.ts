@@ -108,10 +108,18 @@ describe("sourced market release authority", () => {
 
     expect(await getCurrentMarketRelease(campaign!.id)).toBeNull();
 
+    const originalFingerprint = released.release.contentFingerprint;
     await expect(
       db.update(marketReleaseRecords)
         .set({ contentFingerprint: "tampered" })
         .where(eq(marketReleaseRecords.id, released.release.id))
-    ).rejects.toThrow(/append-only/i);
+    ).rejects.toThrow();
+
+    const [immutableRelease] = await db
+      .select()
+      .from(marketReleaseRecords)
+      .where(eq(marketReleaseRecords.id, released.release.id))
+      .limit(1);
+    expect(immutableRelease?.contentFingerprint).toBe(originalFingerprint);
   });
 });
