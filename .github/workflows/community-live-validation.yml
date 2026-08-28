@@ -1,16 +1,24 @@
-name: Market Network validation
+name: Outreach validation
 
 on:
   pull_request:
     paths:
       - "src/app/(community)/**"
+      - "src/app/(dashboard)/studio/**"
       - "src/app/api/securepay-auth/**"
+      - "src/app/api/campaigns/**"
+      - "src/app/api/creative/**"
       - "src/components/community/**"
       - "src/components/readiness/**"
       - "src/components/market/**"
+      - "src/components/studio/**"
       - "src/lib/community/**"
       - "src/lib/readiness/**"
       - "src/lib/market/**"
+      - "src/lib/studio/**"
+      - "src/lib/ai/**"
+      - "src/lib/creative/**"
+      - "src/lib/rbac/**"
       - "src/middleware.ts"
       - "tests/community-*.test.ts"
       - "tests/readiness-*.test.ts"
@@ -93,7 +101,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: market-network-vitest-output
+          name: outreach-vitest-output
           path: vitest-output.txt
           if-no-files-found: warn
           retention-days: 3
