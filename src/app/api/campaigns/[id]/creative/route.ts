@@ -14,6 +14,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const { id } = await params;
   const variants = await listVariantsForCampaign(id);
+
+  // Content-only roles must not use guessed campaign ids to enumerate whether
+  // a campaign exists. Until strategy has handed work into creative by making
+  // at least one variant, the content projection behaves as not found.
+  if (!can(user!.role, "view", "campaigns") && variants.length === 0) {
+    return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+  }
+
   return NextResponse.json({ variants });
 }
 
@@ -21,19 +29,29 @@ const generationSchema = z.object({
   preferredModelId: z.string().uuid().optional(),
 }).strict();
 
-// Studio generation is creative work. Campaign editors (Owner/Strategist)
-// and authorised content creators may generate variants. A preferred model
-// never bypasses registry/routing approval: the AI Gateway fails closed if
-// it is not currently routable for CREATIVE_IDEATION.
+// Strategy/campaign editors may initiate the creative handoff. Content-only
+// creators may continue generating variants only after that handoff exists.
+// This prevents a guessed campaign id from becoming an indirect strategy
+// disclosure channel. A preferred model never bypasses the governed registry.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { user, response } = await requireApiUser();
   if (response) return response;
 
-  if (!can(user!.role, "edit", "campaigns") && !can(user!.role, "create", "content")) {
+  const campaignEditor = can(user!.role, "edit", "campaigns");
+  const contentCreator = can(user!.role, "create", "content");
+  if (!campaignEditor && !contentCreator) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 
   const { id } = await params;
+
+  if (!campaignEditor) {
+    const existing = await listVariantsForCampaign(id);
+    if (existing.length === 0) {
+      return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+    }
+  }
+
   const raw = await req.json().catch(() => ({}));
   const parsed = generationSchema.safeParse(raw);
   if (!parsed.success) {
