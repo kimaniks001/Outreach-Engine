@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { communityProfile, communityPrinciples } from "@/lib/community/foundation";
 import { Card } from "@/components/ui/Card";
+import { PlugMarketEntryCard } from "@/components/market-network/PlugMarketEntryCard";
 import { requireCommunityActor } from "@/lib/community/current-community-actor";
+import { getPlugMarketAuthority } from "@/lib/market-network/plug-market-authority";
 import { getReadinessAuthority } from "@/lib/readiness/authority";
 
 export default async function CommunityProfilePage() {
   const actor = await requireCommunityActor();
   const readiness = await getReadinessAuthority();
+  const market = actor.kind === "SECUREPAY" ? await getPlugMarketAuthority() : null;
   const liveCredentials = readiness.projection?.credentials ?? [];
 
   return (
@@ -19,13 +22,15 @@ export default async function CommunityProfilePage() {
         <p className="mt-2 text-sm text-ink-muted">
           {actor.kind === "SECUREPAY"
             ? readiness.status === "CONNECTED"
-              ? "SecurePay identity connected · capability evidence connected"
+              ? market?.status === "CONNECTED"
+                ? `SecurePay identity connected · ${market.profile.standing.replaceAll("_", " ").toLowerCase()}`
+                : "SecurePay identity connected · capability evidence connected · Plug authority unavailable"
               : "SecurePay identity connected · capability evidence unavailable"
             : communityProfile.territory}
         </p>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-ink-muted">
           {actor.kind === "SECUREPAY"
-            ? "Your identity can show demonstrated market capability when SecurePay has authoritative evidence. Territory, Circles, Master status and reputation remain separate truths and are not inferred here."
+            ? "Your identity shows only what SecurePay can prove: capability from readiness evidence and Plug market standing from separate enrollment authority. Territory, Circles, Master status and reputation remain separate truths."
             : `Known for ${communityProfile.knownFor.toLowerCase()}.`}
         </p>
       </header>
@@ -33,6 +38,16 @@ export default async function CommunityProfilePage() {
       <div className="rounded-lg border border-status-good/20 bg-status-good/5 p-4 text-sm leading-6 text-ink-muted">
         Community identity is about contribution, belonging and demonstrated capability. {communityPrinciples.moneyBoundary}
       </div>
+
+      {actor.kind === "SECUREPAY" && market?.status === "CONNECTED" && (
+        <PlugMarketEntryCard profile={market.profile} />
+      )}
+
+      {actor.kind === "SECUREPAY" && market?.status === "UNAVAILABLE" && (
+        <div className="rounded-lg border border-status-warn/25 bg-status-warn/5 p-4 text-sm leading-6 text-ink-muted">
+          <span className="font-semibold text-ink">Plug market standing unavailable.</span> {market.reason} A Market Ready credential by itself will not be displayed as Plug identity.
+        </div>
+      )}
 
       {actor.kind === "SECUREPAY" ? (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -76,8 +91,9 @@ export default async function CommunityProfilePage() {
           <Card title="Identity boundaries">
             <ul className="space-y-2 text-sm leading-6 text-ink-muted">
               <li>• A current credential proves demonstrated capability only.</li>
-              <li>• It does not make you SecurePay staff, a Community moderator or a Master.</li>
-              <li>• It does not create referral, Lifetime Share, payment or settlement authority.</li>
+              <li>• Plug identity requires separate backend market enrollment.</li>
+              <li>• Neither makes you SecurePay staff, a Community moderator or a Master.</li>
+              <li>• Neither creates referral, Lifetime Share, payment or settlement authority.</li>
               <li>• Circles and community reputation appear only when their own authority exists.</li>
             </ul>
           </Card>
