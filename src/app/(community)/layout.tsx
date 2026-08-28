@@ -20,6 +20,7 @@ export default async function CommunityLayout({ children }: { children: React.Re
               <CommunityLink href="/my-market">My Market</CommunityLink>
               <CommunityLink href="/learn">Learn</CommunityLink>
               <CommunityLink href="/opportunities">Opportunities</CommunityLink>
+              {actor.kind === "SECUREPAY" ? <CommunityLink href="/market-kit">Market Kit</CommunityLink> : null}
               <CommunityLink href="/community-profile">My identity</CommunityLink>
             </nav>
           </div>
@@ -50,6 +51,7 @@ export default async function CommunityLayout({ children }: { children: React.Re
           <CommunityLink href="/my-market">My Market</CommunityLink>
           <CommunityLink href="/learn">Learn</CommunityLink>
           <CommunityLink href="/opportunities">Opportunities</CommunityLink>
+          {actor.kind === "SECUREPAY" ? <CommunityLink href="/market-kit">Market Kit</CommunityLink> : null}
           <CommunityLink href="/community-profile">My identity</CommunityLink>
         </nav>
       </header>
