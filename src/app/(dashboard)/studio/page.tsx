@@ -99,6 +99,12 @@ export default async function StudioPage() {
           <div className="mt-4 rounded-xl border border-brand/20 bg-brand/5 p-4 text-sm text-ink-muted">
             <span className="font-medium text-ink">AI may create.</span> SecurePay must authorise. Distribution may amplify.
           </div>
+          <Link
+            href="/studio/assets"
+            className="mt-4 inline-flex rounded-lg border border-brand/30 px-3 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
+          >
+            Open Asset Library →
+          </Link>
         </Card>
       </section>
 
