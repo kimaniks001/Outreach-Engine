@@ -3,6 +3,10 @@ import { db, schema } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit/log";
 import { runBrandGuardian } from "@/lib/brand-guardian";
 import { assertBudgetApprovedForLaunch, BudgetNotApprovedError } from "./budget-guard";
+import {
+  assertCurrentMarketAssetsForVariants,
+  MarketAssetNotAuthorisedError,
+} from "./market-asset-authority";
 
 export interface CreateDistributionPlanInput {
   campaignId: string;
@@ -20,11 +24,6 @@ export interface CreateDistributionPlanInput {
   providerAccountReference?: string | null;
 }
 
-// A distribution plan may only be created against an APPROVED audience
-// segment — docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md's RBAC reading
-// decision (the "approved scope" DISTRIBUTION_SALES' grant names). The
-// campaign itself does not need to be READY_FOR_DISTRIBUTION yet — Section
-// 1's cycle diagram runs targeting/planning alongside approval.
 export async function createDistributionPlan(input: CreateDistributionPlanInput, actorUserId: string) {
   const [campaign] = await db.select().from(schema.campaigns).where(eq(schema.campaigns.id, input.campaignId)).limit(1);
   if (!campaign) throw new Error("Campaign not found");
@@ -106,9 +105,6 @@ export interface UpdateDistributionPlanInput {
   providerAccountReference?: string | null;
 }
 
-// Edits are blocked once a plan is RUNNING — pause it first. Any edit to a
-// previously brand-reviewed plan resets brandGuardianStatus so a stale PASS
-// can never be reused against changed copy.
 export async function updateDistributionPlan(id: string, input: UpdateDistributionPlanInput) {
   const existing = await getDistributionPlan(id);
   if (!existing) return null;
@@ -131,11 +127,6 @@ export async function updateDistributionPlan(id: string, input: UpdateDistributi
   return row ?? null;
 }
 
-// docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md Sections 25-26 — channel-
-// adapted creative copy (channelStrategy/cta/destination) must itself pass
-// Brand Guardian before the plan can become executable. The deterministic
-// rule engine result is always authoritative, same discipline as
-// src/lib/campaigns/campaigns.ts::runCampaignBrandGuardian.
 export async function runDistributionPlanBrandGuardian(planId: string, actorUserId: string) {
   const plan = await getDistributionPlan(planId);
   if (!plan) throw new Error("Distribution plan not found");
@@ -183,10 +174,6 @@ export async function runDistributionPlanBrandGuardian(planId: string, actorUser
 
 export type DistributionPlanReviewAction = "APPROVE" | "REJECT";
 
-// Owner-only — enforced by the caller via requireApiCapability("approve",
-// "distribution"), per the literal grant table: GROWTH_DIRECTOR has
-// view-only on `distribution` (no approve), unlike campaigns. See
-// docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md's RBAC reading-decision note.
 export async function reviewDistributionPlan(
   planId: string,
   action: DistributionPlanReviewAction,
@@ -239,11 +226,11 @@ export class PlanNotReadyError extends Error {
   }
 }
 
-// The gate immediately before execution becomes possible — every
-// precondition in docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md Sections 8/13/
-// 26 is checked here, server-side: plan APPROVED, Brand Guardian PASS on the
-// plan's own channel-adapted copy, every referenced creative_variant itself
-// PASS, and an APPROVED budget. Owner-only, same capability as approval.
+/**
+ * Final queue gate. A plan is not READY merely because its copy passed a
+ * deterministic review. Every referenced creative must also be represented
+ * by a CURRENT released Market Asset, then the approved budget is checked.
+ */
 export async function markDistributionPlanReady(planId: string, actorUserId: string) {
   const plan = await getDistributionPlan(planId);
   if (!plan) throw new Error("Distribution plan not found");
@@ -268,6 +255,16 @@ export async function markDistributionPlanReady(planId: string, actorUserId: str
     }
   }
 
+  let assetAuthority;
+  try {
+    assetAuthority = await assertCurrentMarketAssetsForVariants(plan.campaignId, plan.creativeVariantIds);
+  } catch (err) {
+    if (err instanceof MarketAssetNotAuthorisedError) {
+      throw new PlanNotReadyError(err.message);
+    }
+    throw err;
+  }
+
   try {
     await assertBudgetApprovedForLaunch(planId);
   } catch (err) {
@@ -288,7 +285,11 @@ export async function markDistributionPlanReady(planId: string, actorUserId: str
     actorUserId,
     targetType: "distribution_plan",
     targetId: planId,
-    metadata: { action: "MARK_READY", status: "READY" },
+    metadata: {
+      action: "MARK_READY",
+      status: "READY",
+      marketAssetIds: assetAuthority.marketAssetIds,
+    },
   });
 
   return row ?? null;

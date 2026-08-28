@@ -11,6 +11,10 @@ export interface DistributionLaunchInput {
   channel: ChannelType;
   approvedBudget: number;
   currency: string;
+  dailyCap: number | null;
+  totalCap: number | null;
+  startDate: Date | null;
+  endDate: Date | null;
   destination: string | null;
   cta: string;
 }
@@ -56,6 +60,9 @@ export interface DistributionAdapter {
   // adapter implementation both exist, same discipline as
   // src/lib/ai/adapters/types.ts::ProviderAdapter.hasCredentials().
   validateConfiguration(): ConfigurationCheck;
+  // Any LIVE/SANDBOX implementation must map the human-approved budget caps
+  // and schedule in DistributionLaunchInput to equivalent provider-side
+  // controls. Ignoring them is a contract violation, not an optional feature.
   launch(input: DistributionLaunchInput): Promise<DistributionLaunchResult>;
   pause(externalExecutionId: string): Promise<DistributionPauseResult>;
   // `context` is passed explicitly rather than recalled from adapter-local

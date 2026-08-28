@@ -49,6 +49,10 @@ export const AUDIT_EVENT_TYPES = [
   "EXECUTION_FAILED",
   "EXECUTION_CANCELLED",
   "SAFE_MODE_BLOCKED_EXECUTION",
+  // Completion Phase 4 — current Market Asset authority and execution
+  // policy are re-checked immediately before provider execution.
+  "DISTRIBUTION_ASSET_AUTHORITY_BLOCKED",
+  "DISTRIBUTION_EXECUTION_POLICY_BLOCKED",
   // Phase 4 — docs/PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md
   "PROFILE_CREATED",
   "PROFILE_LINKED",
