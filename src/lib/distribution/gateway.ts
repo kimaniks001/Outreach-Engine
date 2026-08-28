@@ -9,12 +9,20 @@ import {
   assertCurrentMarketAssetsForVariants,
   MarketAssetNotAuthorisedError,
 } from "./market-asset-authority";
+import {
+  assertExecutionWindow,
+  DistributionExecutionPolicyError,
+} from "./execution-policy";
 import type { ChannelType } from "./channels";
 
+// Single entry point for all distribution execution. Safe Mode, current
+// publication authority, timing, approved budget and provider readiness are
+// all checked here server-side before an adapter can be invoked.
 export type LaunchOutcome =
   | { outcome: "LAUNCHED"; executionId: string; externalExecutionId: string }
   | { outcome: "SAFE_MODE_BLOCKED"; reason: string }
   | { outcome: "MARKET_ASSET_NOT_AUTHORISED"; reason: string }
+  | { outcome: "EXECUTION_POLICY_BLOCKED"; reason: string }
   | { outcome: "BUDGET_NOT_APPROVED"; reason: string }
   | { outcome: "PLAN_NOT_READY"; reason: string }
   | { outcome: "ADAPTER_NOT_AVAILABLE"; executionId: string; reason: string }
@@ -32,6 +40,8 @@ export async function launch(distributionPlanId: string, actorUserId: string): P
     return { outcome: "PLAN_NOT_READY", reason: `Plan status is ${plan.status}; it must be READY to launch.` };
   }
 
+  // Safe Mode first, before any budget or adapter work — see
+  // docs/AUDIT_AND_CONTROL.md Section 4.
   try {
     await assertNotSafeMode("DISTRIBUTION_EXECUTION");
   } catch {
@@ -62,6 +72,22 @@ export async function launch(distributionPlanId: string, actorUserId: string): P
         metadata: { channel: plan.channel, reason: err.message },
       });
       return { outcome: "MARKET_ASSET_NOT_AUTHORISED", reason: err.message };
+    }
+    throw err;
+  }
+
+  try {
+    assertExecutionWindow({ startDate: plan.startDate, endDate: plan.endDate });
+  } catch (err) {
+    if (err instanceof DistributionExecutionPolicyError) {
+      await recordAuditEvent({
+        eventType: "DISTRIBUTION_EXECUTION_POLICY_BLOCKED",
+        actorUserId,
+        targetType: "distribution_plan",
+        targetId: distributionPlanId,
+        metadata: { channel: plan.channel, reason: err.message },
+      });
+      return { outcome: "EXECUTION_POLICY_BLOCKED", reason: err.message };
     }
     throw err;
   }
@@ -109,6 +135,10 @@ export async function launch(distributionPlanId: string, actorUserId: string): P
       channel: plan.channel as ChannelType,
       approvedBudget: Number(budgetRow.approvedBudget),
       currency: budgetRow.currency,
+      dailyCap: budgetRow.dailyCap === null ? null : Number(budgetRow.dailyCap),
+      totalCap: budgetRow.totalCap === null ? null : Number(budgetRow.totalCap),
+      startDate: plan.startDate,
+      endDate: plan.endDate,
       destination: plan.destination,
       cta: plan.cta,
     });
@@ -145,6 +175,10 @@ export async function launch(distributionPlanId: string, actorUserId: string): P
         adapterKey: routing.adapterKey,
         isSimulated: routing.adapterKey === "simulated",
         marketAssetIds: assetAuthority.marketAssetIds,
+        dailyCap: budgetRow.dailyCap,
+        totalCap: budgetRow.totalCap,
+        startDate: plan.startDate?.toISOString() ?? null,
+        endDate: plan.endDate?.toISOString() ?? null,
       },
     });
 
@@ -229,6 +263,12 @@ export async function pause(distributionPlanId: string, actorUserId: string): Pr
   return { outcome: "PAUSED" };
 }
 
+// Refreshes an execution's reportedSpend from its adapter — used by the
+// executions list/detail UI. Deliberately does NOT let the adapter's
+// status() response overwrite the DB row's status column: our own DB
+// record (updated only by explicit launch()/pause() calls) is the sole
+// authoritative lifecycle state, never re-derived from an adapter's
+// stateless response — see the comment on simulated.ts::status().
 export async function refreshExecutionStatus(executionId: string) {
   const [execution] = await db
     .select()
