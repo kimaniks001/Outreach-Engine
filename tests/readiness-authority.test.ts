@@ -30,7 +30,7 @@ describe("SecurePayReadinessClient", () => {
 describe("readiness capability boundaries", () => {
   const projection: AuthoritativeReadinessProjection = {
     source: "BACKEND",
-    plugStatus: "MARKET_READY",
+    marketReadinessStatus: "MARKET_READY",
     credentials: [
       {
         credentialId: "MARKET_READY:v1",
@@ -50,6 +50,11 @@ describe("readiness capability boundaries", () => {
       },
     ],
   };
+
+  it("keeps readiness status separate from Plug identity", () => {
+    expect(projection.marketReadinessStatus).toBe("MARKET_READY");
+    expect(projection).not.toHaveProperty("plugStatus");
+  });
 
   it("requires CURRENT credential evidence", () => {
     expect(hasCurrentCredential(projection, "Market Ready")).toBe(true);
