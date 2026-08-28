@@ -3,9 +3,8 @@ import { db, schema } from "@/lib/db";
 
 // Matches docs/AUDIT_AND_CONTROL.md Section 2, extended with ACCESS_DENIED
 // (needed to make server-side RBAC enforcement observable, per
-// docs/ACCESS_CONTROL_MODEL.md Section 5) and the AI-specific event Phase 1
-// introduces (AI_EXECUTION, for docs/AI_GOVERNANCE.md Section 6
-// traceability).
+// docs/ACCESS_CONTROL_MODEL.md Section 5) and governed product-specific
+// events introduced by later phases.
 export const AUDIT_EVENT_TYPES = [
   "LOGIN_SUCCESS",
   "LOGIN_FAILURE",
@@ -32,6 +31,9 @@ export const AUDIT_EVENT_TYPES = [
   "CLAIM_SOURCE_ATTACHED",
   "CAMPAIGN_MARKET_REVIEWED",
   "CAMPAIGN_RELEASED_TO_MARKET",
+  // Completion Phase 3 — authoritative Asset Library + Plug Market Kit
+  "MARKET_ASSET_RELEASED",
+  "MARKET_ASSET_STATE_CHANGED",
   // Phase 3 — docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md
   "AUDIENCE_CREATED",
   "AUDIENCE_CLASSIFIED",
