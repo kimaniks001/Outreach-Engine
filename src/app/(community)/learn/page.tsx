@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ReadinessJourney } from "@/components/readiness/ReadinessJourney";
 import { ReadinessAssessment } from "@/components/readiness/ReadinessAssessment";
 import { Card } from "@/components/ui/Card";
@@ -70,6 +71,19 @@ export default async function LearnPage() {
             <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">
               These states come from immutable SecurePay assessment and credential evidence for this signed-in identity. Outreach does not award them itself.
             </p>
+            {liveProfile.marketReady && (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Link
+                  href="/market-entry"
+                  className="rounded-md bg-brand px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+                >
+                  Enter the market →
+                </Link>
+                <p className="text-xs leading-5 text-ink-faint">
+                  Market Ready makes you eligible. Plug market participation is still a separate, explicit choice.
+                </p>
+              </div>
+            )}
           </div>
 
           {livePrograms.map((program) => {
@@ -128,7 +142,7 @@ export default async function LearnPage() {
       </section>
 
       <div className="rounded-lg border border-surface-border bg-surface p-4 text-xs leading-5 text-ink-faint">
-        Market readiness proves demonstrated capability only. It does not create staff authority, Master status, Community moderation, referral entitlement, Lifetime Share, payment authority, Payment Ready, release, settlement or financial trust.
+        Market readiness proves demonstrated capability only. It does not create Plug identity, staff authority, Master status, Community moderation, referral entitlement, Lifetime Share, payment authority, Payment Ready, release, settlement or financial trust.
       </div>
     </div>
   );
