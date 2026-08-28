@@ -11,10 +11,15 @@ import { getCampaign } from "@/lib/campaigns/campaigns";
 
 const MAX_VARIANTS_PER_GENERATION = 3;
 
-// docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md Sections 16-18. Tries AI
-// first; always falls back to a deterministic template set so Creative
-// Studio never simply fails for lack of AI — max 3 variants either way.
-export async function generateVariantsForCampaign(campaignId: string, actorUserId: string) {
+// Studio/campaign creative generation. A preferred model is only a request to
+// the governed AI router; it can never bypass provider availability, per-task
+// approval, Safe Mode or AI budgets. If AI cannot execute, the deterministic
+// brief fallback remains available and is labelled as such in audit/result.
+export async function generateVariantsForCampaign(
+  campaignId: string,
+  actorUserId: string,
+  preferredModelId?: string
+) {
   const campaign = await getCampaign(campaignId);
   if (!campaign) throw new Error("Campaign not found");
 
@@ -27,16 +32,24 @@ export async function generateVariantsForCampaign(campaignId: string, actorUserI
     cta: campaign.cta,
   };
 
-  const aiResult = await generateCreativeVariantsViaAI({ campaign: campaignFields, requestedByUserId: actorUserId });
+  const aiResult = await generateCreativeVariantsViaAI({
+    campaign: campaignFields,
+    requestedByUserId: actorUserId,
+    preferredModelId,
+  });
 
   let drafts: CreativeVariantDraft[];
   let aiUsageRecordId: string | null = null;
   let source: "ai" | "deterministic-fallback" = "deterministic-fallback";
+  let model: string | null = null;
+  let provider: string | null = null;
 
   if (aiResult.status === "SUCCESS") {
     drafts = aiResult.data.variants.slice(0, MAX_VARIANTS_PER_GENERATION);
     aiUsageRecordId = aiResult.usageRecordId;
     source = "ai";
+    model = aiResult.model;
+    provider = aiResult.provider;
   } else {
     drafts = buildDeterministicVariants(campaignFields);
     if ("usageRecordId" in aiResult) aiUsageRecordId = aiResult.usageRecordId;
@@ -67,10 +80,16 @@ export async function generateVariantsForCampaign(campaignId: string, actorUserI
     actorUserId,
     targetType: "campaign",
     targetId: campaignId,
-    metadata: { source, count: inserted.length },
+    metadata: {
+      source,
+      count: inserted.length,
+      preferredModelId: preferredModelId ?? null,
+      provider,
+      model,
+    },
   });
 
-  return { variants: inserted, source };
+  return { variants: inserted, source, provider, model };
 }
 
 export async function listVariantsForCampaign(campaignId: string) {
@@ -124,9 +143,7 @@ export async function listVariantsForCampaigns(campaignIds: string[]) {
 }
 
 // Content & Engagement's view into campaign work — creative variants only,
-// with just the campaign *name* for context, never the full strategy
-// (opportunity link, positioning angle, objective). See
-// docs/PHASE_2_INTELLIGENCE_CAMPAIGN_CREATIVE.md RBAC section.
+// with just the campaign name for context, never the full strategy.
 export async function listAllVariantsWithCampaignName() {
   const rows = await db
     .select({
