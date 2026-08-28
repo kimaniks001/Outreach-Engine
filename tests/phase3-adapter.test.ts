@@ -5,6 +5,13 @@ import { metaAdsAdapter } from "@/lib/distribution/adapters/meta-ads";
 import { listDistributionProviders } from "@/lib/distribution/providers";
 import { routeDistribution } from "@/lib/distribution/router";
 
+const executionPolicy = {
+  dailyCap: null,
+  totalCap: null,
+  startDate: null,
+  endDate: null,
+} as const;
+
 describe("simulated adapter: proves the execution architecture without spending money", () => {
   it("launch produces a simulated, prefixed external execution id, never a bare id that could pass as real", async () => {
     const result = await simulatedAdapter.launch({
@@ -12,6 +19,7 @@ describe("simulated adapter: proves the execution architecture without spending 
       channel: "GOOGLE_SEARCH",
       approvedBudget: 100,
       currency: "USD",
+      ...executionPolicy,
       destination: null,
       cta: "Learn more",
     });
@@ -25,6 +33,7 @@ describe("simulated adapter: proves the execution architecture without spending 
       channel: "META_FACEBOOK",
       approvedBudget: 200,
       currency: "USD",
+      ...executionPolicy,
       destination: null,
       cta: "Learn more",
     });
@@ -42,6 +51,7 @@ describe("simulated adapter: proves the execution architecture without spending 
       channel: "LINKEDIN",
       approvedBudget: 50,
       currency: "USD",
+      ...executionPolicy,
       destination: null,
       cta: "Learn more",
     });
@@ -67,6 +77,7 @@ describe("simulated adapter: proves the execution architecture without spending 
         channel: "GOOGLE_SEARCH",
         approvedBudget: 100,
         currency: "USD",
+        ...executionPolicy,
         destination: null,
         cta: SIMULATE_FAILURE_MARKER,
       })
