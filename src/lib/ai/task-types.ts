@@ -1,6 +1,7 @@
-// Matches the Phase 1 brief Section 16. These are categories only — no
-// agents are implemented for any of them in Phase 1. See
-// docs/PHASE_1_COMMAND_CENTRE_AND_AI_CORE.md Non-Goals.
+// Governed AI task categories. A task type describes what a model is being
+// asked to do; it does not grant publication, legal, budget or financial
+// authority. Models remain separately approved/enabled per task in the Model
+// Registry.
 export const AI_TASK_TYPES = [
   "MARKET_RESEARCH",
   "SOURCE_SYNTHESIS",
@@ -10,14 +11,23 @@ export const AI_TASK_TYPES = [
   "CONTENT_COPY",
   "CREATIVE_IDEATION",
   "AUDIENCE_CLASSIFICATION",
-  // Phase 3 — docs/PHASE_3_TARGETING_AND_DISTRIBUTION.md Section 11. Optional
-  // narrative enrichment only, mirroring BRAND_REVIEW's role: the
-  // deterministic channel-recommendation rule engine
-  // (src/lib/distribution/channel-recommendation.ts) is always authoritative
-  // for the channel list/priority; this task can never change it.
+  // Distribution recommendation remains deterministic-authority first. AI
+  // may enrich the explanation but cannot change the authoritative channel
+  // list/priority.
   "CHANNEL_RECOMMENDATION",
   "IMPACT_ANALYSIS",
   "GROWTH_RECOMMENDATION",
+  // Outreach Master Completion Roadmap v1.0 — Studio capability lanes.
+  // These task types make specialist model capability explicit. Adding a
+  // category here never makes a provider/model routable: the registry still
+  // requires AVAILABLE provider + enabled/approved model + per-task approval.
+  "VISUAL_DESIGN",
+  "IMAGE_GENERATION",
+  "VIDEO_GENERATION",
+  "AUDIO_PRODUCTION",
+  "PRESENTATION_DESIGN",
+  "TRANSLATION_LOCALISATION",
+  "CHANNEL_ADAPTATION",
 ] as const;
 
 export type AITaskType = (typeof AI_TASK_TYPES)[number];
