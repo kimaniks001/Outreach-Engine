@@ -6,6 +6,7 @@ import { createSignal } from "@/lib/intelligence/signals";
 import { addEvidence, reviewEvidence, isManualUnverified } from "@/lib/intelligence/evidence";
 import { analyzeSignalAndCreateOpportunity, reviewOpportunity, getOpportunity } from "@/lib/intelligence/opportunities";
 import { createCampaignFromOpportunity, runCampaignBrandGuardian, reviewCampaign } from "@/lib/campaigns/campaigns";
+import { releaseApprovedCampaign } from "./support/market-release-fixture";
 import { generateVariantsForCampaign } from "@/lib/creative/variants";
 import { runStructuredTask } from "@/lib/ai/tasks/run-structured-task";
 import { z } from "zod";
@@ -219,7 +220,7 @@ describe("campaign lifecycle", () => {
     await expect(reviewCampaign(campaign.id, "APPROVE", ownerId)).rejects.toThrow();
   });
 
-  it("approving a campaign is audited via approval_events and reaches READY_FOR_DISTRIBUTION", async () => {
+  it("campaign approval is audited but final market release is a separate authority", async () => {
     const campaign = await createCampaignFromOpportunity(
       {
         opportunityId,
@@ -234,19 +235,19 @@ describe("campaign lifecycle", () => {
     );
     await runCampaignBrandGuardian(campaign.id, ownerId);
     const approved = await reviewCampaign(campaign.id, "APPROVE", ownerId);
-    expect(approved?.status).toBe("READY_FOR_DISTRIBUTION");
+    expect(approved?.status).toBe("APPROVED");
 
     const events = await db
       .select()
       .from(schema.approvalEvents)
       .where(eq(schema.approvalEvents.subjectId, campaign.id));
     expect(events.some((e) => e.action === "APPROVE")).toBe(true);
+
+    const released = await releaseApprovedCampaign(campaign.id, ownerId);
+    expect(released.status).toBe("READY_FOR_DISTRIBUTION");
   });
 
-  it("no publish/distribution action exists anywhere in this codebase", async () => {
-    // Structural guarantee: the campaigns table has no columns implying a
-    // live distribution/publish execution, and no such API route exists —
-    // verified here by asserting the terminal status name itself.
+  it("market release still does not mean published or distributed", async () => {
     const campaign = await createCampaignFromOpportunity(
       {
         opportunityId,
@@ -261,9 +262,12 @@ describe("campaign lifecycle", () => {
     );
     await runCampaignBrandGuardian(campaign.id, ownerId);
     const approved = await reviewCampaign(campaign.id, "APPROVE", ownerId);
-    expect(approved?.status).toBe("READY_FOR_DISTRIBUTION");
-    expect(approved?.status).not.toBe("PUBLISHED");
-    expect(approved?.status).not.toBe("DISTRIBUTED");
+    expect(approved?.status).toBe("APPROVED");
+
+    const released = await releaseApprovedCampaign(campaign.id, ownerId);
+    expect(released.status).toBe("READY_FOR_DISTRIBUTION");
+    expect(released.status).not.toBe("PUBLISHED");
+    expect(released.status).not.toBe("DISTRIBUTED");
   });
 });
 
