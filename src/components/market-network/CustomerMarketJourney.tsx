@@ -7,6 +7,12 @@ import {
   humanRequestType,
   marketRelationshipBoundary,
 } from "@/lib/market-network/customer-market-foundation";
+import {
+  CANDIDATE_PAGE_SIZE,
+  mergeCandidatePage,
+  upsertCustomerRequest,
+  type CandidatePageState,
+} from "@/lib/market-network/customer-market-ui-state";
 import type {
   CustomerMarketRequest,
   CustomerMarketRequestType,
@@ -28,7 +34,7 @@ class BrowserMarketError extends Error {
 
 export function CustomerMarketJourney(props: Props) {
   const [requests, setRequests] = useState<CustomerMarketRequest[]>(props.initialRequests);
-  const [candidates, setCandidates] = useState<Record<string, InterestedMarketCandidate[]>>({});
+  const [candidates, setCandidates] = useState<Record<string, CandidatePageState>>({});
   const [selections, setSelections] = useState<Record<string, CustomerMarketSelection>>({});
   const [relationships, setRelationships] = useState<Record<string, CustomerPlugRelationship>>({});
   const [busy, setBusy] = useState<string | null>(null);
@@ -71,14 +77,26 @@ export function CustomerMarketJourney(props: Props) {
       pendingCreateKeys.current[requestType] ?? globalThis.crypto.randomUUID();
     pendingCreateKeys.current[requestType] = idempotencyKey;
     try {
-      await fetchJson<CustomerMarketRequest>("/api/market-network/customer-requests", {
+      const created = await fetchJson<CustomerMarketRequest>("/api/market-network/customer-requests", {
         method: "POST",
         headers: { "content-type": "application/json", "Idempotency-Key": idempotencyKey },
         body: JSON.stringify({ requestType }),
       });
+
+      // A successful create response is authoritative enough to update this
+      // screen. Do that before releasing the idempotency key so a failed list
+      // refresh can never turn a successful create into an unsafe retry.
+      setRequests((current) => upsertCustomerRequest(current, created));
       delete pendingCreateKeys.current[requestType];
-      await refreshRequests();
-      setNotice("Your request is now live in the qualified market.");
+
+      try {
+        await refreshRequests();
+        setNotice("Your request is now live in the qualified market.");
+      } catch {
+        setNotice(
+          "Your request is live. The full request list could not refresh, but you do not need to publish it again."
+        );
+      }
     } catch (error) {
       setNotice(messageFor(error, "Your request could not be created. Try the same action again."));
     } finally {
@@ -86,18 +104,31 @@ export function CustomerMarketJourney(props: Props) {
     }
   }
 
-  async function loadCandidates(requestId: string) {
-    setBusy(`candidates:${requestId}`);
+  async function loadCandidates(requestId: string, offset = 0) {
+    setBusy(`candidates:${requestId}:${offset}`);
     setNotice(null);
     try {
+      const request = requests.find((item) => item.requestId === requestId);
       const current = await fetchJson<InterestedMarketCandidate[]>(
-        `/api/market-network/customer-requests/${encodeURIComponent(requestId)}/candidates`
+        `/api/market-network/customer-requests/${encodeURIComponent(requestId)}/candidates?limit=${CANDIDATE_PAGE_SIZE}&offset=${offset}`
       );
-      setCandidates((previous) => ({ ...previous, [requestId]: current }));
+      setCandidates((previous) => ({
+        ...previous,
+        [requestId]: mergeCandidatePage(
+          previous[requestId],
+          current,
+          offset,
+          request?.interestedCount ?? current.length
+        ),
+      }));
       if (current.length === 0) setNotice("No qualified Plug has expressed interest in this request yet.");
     } catch (error) {
-      await maybeRefreshAfterStateChange(error);
-      setNotice(messageFor(error, "Interested candidates could not be read right now."));
+      const refreshed = await maybeRefreshAfterStateChange(error, requestId);
+      setNotice(
+        refreshed
+          ? "This request changed in SecurePay. The latest state is now shown."
+          : messageFor(error, "Interested candidates could not be read right now.")
+      );
     } finally {
       setBusy(null);
     }
@@ -116,12 +147,16 @@ export function CustomerMarketJourney(props: Props) {
         }
       );
       setSelections((previous) => ({ ...previous, [requestId]: selection }));
-      setCandidates((previous) => ({ ...previous, [requestId]: [] }));
+      setCandidates((previous) => withoutKey(previous, requestId));
       await refreshRequests();
       setNotice("SecurePay recorded your selection. This is still not a referral or payment entitlement.");
     } catch (error) {
-      await maybeRefreshAfterStateChange(error);
-      setNotice(messageFor(error, "That candidate could not be selected right now."));
+      const refreshed = await maybeRefreshAfterStateChange(error, requestId);
+      setNotice(
+        refreshed
+          ? "The candidate state changed in SecurePay. The latest selection is now shown."
+          : messageFor(error, "That candidate could not be selected right now.")
+      );
     } finally {
       setBusy(null);
     }
@@ -138,8 +173,12 @@ export function CustomerMarketJourney(props: Props) {
       await refreshRequests();
       setNotice("Your market request has been cancelled.");
     } catch (error) {
-      await maybeRefreshAfterStateChange(error);
-      setNotice(messageFor(error, "This request could not be cancelled right now."));
+      const refreshed = await maybeRefreshAfterStateChange(error, requestId);
+      setNotice(
+        refreshed
+          ? "The request changed in SecurePay. Its latest state is now shown."
+          : messageFor(error, "This request could not be cancelled right now.")
+      );
     } finally {
       setBusy(null);
     }
@@ -161,7 +200,9 @@ export function CustomerMarketJourney(props: Props) {
       );
       setRelationships((previous) => ({ ...previous, [requestId]: relationship }));
     } catch (error) {
-      if (!(error instanceof BrowserMarketError) || error.status !== 404) {
+      if (error instanceof BrowserMarketError && error.status === 404) {
+        setRelationships((previous) => withoutKey(previous, requestId));
+      } else {
         // A missing relationship is the expected pre-open state. Other read failures are non-authoritative.
       }
     }
@@ -178,21 +219,34 @@ export function CustomerMarketJourney(props: Props) {
       setRelationships((previous) => ({ ...previous, [requestId]: relationship }));
       setNotice("Your market relationship is active. Contact and money remain separately controlled by SecurePay.");
     } catch (error) {
-      await maybeRefreshAfterStateChange(error);
-      setNotice(messageFor(error, "The selected relationship could not be opened right now."));
+      const refreshed = await maybeRefreshAfterStateChange(error, requestId);
+      setNotice(
+        refreshed
+          ? "The relationship state changed in SecurePay. Its latest status is now shown."
+          : messageFor(error, "The selected relationship could not be opened right now.")
+      );
     } finally {
       setBusy(null);
     }
   }
 
-  async function maybeRefreshAfterStateChange(error: unknown) {
+  async function maybeRefreshAfterStateChange(error: unknown, requestId: string): Promise<boolean> {
     if (error instanceof BrowserMarketError && (error.status === 404 || error.status === 409)) {
       try {
-        await refreshRequests();
+        const fresh = await refreshRequests();
+        const request = fresh.find((item) => item.requestId === requestId);
+        if (request?.status === "SELECTED") {
+          await hydrateSelected(requestId);
+        } else {
+          setSelections((previous) => withoutKey(previous, requestId));
+          setRelationships((previous) => withoutKey(previous, requestId));
+        }
+        return true;
       } catch {
         // Preserve the last known backend projection; never synthesize a replacement state.
       }
     }
+    return false;
   }
 
   return (
@@ -254,7 +308,7 @@ export function CustomerMarketJourney(props: Props) {
             {requests.map((request) => {
               const meaning = customerRequestMeaning(request.status);
               const relationship = relationships[request.requestId];
-              const candidateList = candidates[request.requestId];
+              const candidatePage = candidates[request.requestId];
               const selection = selections[request.requestId];
               return (
                 <article key={request.requestId} className="rounded-xl border border-surface-border bg-surface-raised p-5 md:p-6">
@@ -282,7 +336,7 @@ export function CustomerMarketJourney(props: Props) {
                           onClick={() => void loadCandidates(request.requestId)}
                           className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                         >
-                          {busy === `candidates:${request.requestId}` ? "Checking…" : `Review interested Plugs (${request.interestedCount})`}
+                          {busy === `candidates:${request.requestId}:0` ? "Checking…" : `Review interested Plugs (${request.interestedCount})`}
                         </button>
                         <button
                           type="button"
@@ -294,13 +348,14 @@ export function CustomerMarketJourney(props: Props) {
                         </button>
                       </div>
 
-                      {candidateList && (
-                        candidateList.length === 0 ? (
+                      {candidatePage && (
+                        candidatePage.items.length === 0 ? (
                           <p className="text-sm text-ink-muted">No current interested candidates are available.</p>
                         ) : (
-                          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                            {candidateList.map((candidate, index) => (
-                              <div key={candidate.candidateRef} className="rounded-lg border border-brand/20 bg-brand/5 p-4">
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                              {candidatePage.items.map((candidate, index) => (
+                                <div key={candidate.candidateRef} className="rounded-lg border border-brand/20 bg-brand/5 p-4">
                                 <div className="flex items-start justify-between gap-3">
                                   <div>
                                     <p className="text-sm font-semibold text-ink">Interested Plug {index + 1}</p>
@@ -319,7 +374,20 @@ export function CustomerMarketJourney(props: Props) {
                                   {busy === `select:${request.requestId}:${candidate.candidateRef}` ? "Selecting…" : "Choose this Plug"}
                                 </button>
                               </div>
-                            ))}
+                              ))}
+                            </div>
+                            {candidatePage.hasMore ? (
+                              <button
+                                type="button"
+                                disabled={busy !== null}
+                                onClick={() => void loadCandidates(request.requestId, candidatePage.nextOffset)}
+                                className="rounded-md border border-brand/30 px-4 py-2 text-sm font-medium text-brand disabled:opacity-50"
+                              >
+                                {busy === `candidates:${request.requestId}:${candidatePage.nextOffset}`
+                                  ? "Loading more…"
+                                  : `Load more interested Plugs (${candidatePage.items.length} of ${request.interestedCount})`}
+                              </button>
+                            ) : null}
                           </div>
                         )
                       )}
@@ -411,4 +479,10 @@ async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
 
 function messageFor(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function withoutKey<T>(record: Record<string, T>, key: string): Record<string, T> {
+  const next = { ...record };
+  delete next[key];
+  return next;
 }

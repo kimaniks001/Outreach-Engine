@@ -33,7 +33,7 @@ pillar.
 
 Full doctrine: [docs/OUTREACH_ENGINE_DOCTRINE.md](docs/OUTREACH_ENGINE_DOCTRINE.md)
 
-## The Six-Phase Roadmap
+## The Product Roadmap
 
 | Phase | Name | Status |
 |---|---|---|
@@ -42,15 +42,24 @@ Full doctrine: [docs/OUTREACH_ENGINE_DOCTRINE.md](docs/OUTREACH_ENGINE_DOCTRINE.
 | 2 | Intelligence + Campaign + Creative | Complete |
 | 3 | Targeting + Distribution | Complete |
 | 4 | Audience Memory, Attribution & Conversion | Complete |
-| 5 | Impact + Growth Director + Scale | **Complete — final planned phase** |
+| 5 | Impact + Growth Director + Scale | Complete |
+| 6 | Market Network Commercial Journey | Complete |
 
 Full roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 
-## Current Phase: Phase 5 — Impact + Growth Director + Scale (final)
+## Current Phase: Phase 6 — Market Network Commercial Journey
+
+Phase 6 connects the caller-scoped SecurePay market identity to the human
+commercial journey: customer asks for help → qualified Plug expresses
+interest → customer selects → customer explicitly opens the relationship.
+Outreach consumes SecurePay authority and does not manufacture identity,
+capability, relationship, referral or financial truth. See
+[docs/PHASE_6_MARKET_NETWORK_COMMERCIAL_JOURNEY_COMPLETION_REPORT.md](docs/PHASE_6_MARKET_NETWORK_COMMERCIAL_JOURNEY_COMPLETION_REPORT.md).
+
+## Previous Phase: Phase 5 — Impact + Growth Director + Scale
 
 Phase 5 closes the commercial learning loop — MEASURE → LEARN → RECOMMEND
-→ PRIORITIZE → ACT WITH APPROVAL → MEASURE AGAIN — and is the **final
-planned phase** of the six-phase roadmap. Impact scorecards (campaign/
+→ PRIORITIZE → ACT WITH APPROVAL → MEASURE AGAIN. Impact scorecards (campaign/
 channel/product/audience) and a never-fabricated ROI/efficiency model;
 real A/B experiments evaluated against actual SecurePay behavior (not
 clicks) with a deterministic winner/inconclusive engine; durable
@@ -73,11 +82,6 @@ for model self-check/cost control,
 Analytics API boundary, and
 [docs/PHASE_5_COMPLETION_REPORT.md](docs/PHASE_5_COMPLETION_REPORT.md) for
 status and final classification.
-
-**No Phase 6 exists or is planned.** Future work beyond this roadmap is
-tracked as post-roadmap enhancements (see
-[docs/PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md](docs/PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md)
-Section 12), not new phases.
 
 Phase 4 (previous): commercial memory, identity resolution, lifecycle
 state, product-event ingestion, journeys, next-best-action, and
@@ -136,12 +140,13 @@ npm run dev                       # http://localhost:3000
   on-demand and manually triggerable; the interface is documented for a
   future automation layer, not built as one.
 - No CRM replacement, HubSpot/Clay/n8n integration, or data warehouse.
-- No credentials are committed; none are required to run Phase 1-5
+- No credentials are committed; none are required to run the staff Command
   locally — see
   [docs/PHASE_4_PRODUCT_EVENT_INTEGRATION.md](docs/PHASE_4_PRODUCT_EVENT_INTEGRATION.md)
   for the optional (unset-by-default) product-event ingestion secret.
-- No Phase 6 — this is the final planned phase. Future work is tracked as
-  post-roadmap enhancements, not new phases.
+- Phase 6 market/community features require a caller-scoped SecurePay session
+  and configured `SECUREPAY_API_BASE_URL`; they do not fall back to fabricated
+  local authority.
 
 ## Documentation Map
 

@@ -1,6 +1,6 @@
 # Community LIVE authority bridge
 
-Status: post-roadmap foundation
+Status: live read, membership and publishing bridge implemented
 
 ## Purpose
 
@@ -41,9 +41,15 @@ Membership roles are backend-owned `MEMBER`, `MODERATOR`, and `ORGANISER`. Feed 
 
 Outreach currently has its own internal staff session. Plugs and Masters should not receive a second independent password identity merely to use Community LIVE.
 
-The intended next identity slice is a SecurePay identity/session bridge that gives Outreach a caller-scoped SecurePay access token associated with the authenticated KS identity. The Community authority adapter added in this slice therefore requires an explicit caller bearer token and has no fallback service credential.
+Outreach now uses the SecurePay identity/session bridge to hold the caller's
+access and refresh tokens in httpOnly cookies. Community browser actions call
+same-origin Outreach routes, which propagate only that caller token to
+SecurePayAPI. There is no fallback service credential.
 
-Until that identity bridge is implemented, Community LIVE remains in prototype/demo presentation mode even though the backend authority contract is typed and ready.
+The live Community screen reads authorized Communities and feed posts and now
+wires real join, join-request, leave and deliberate feed-publish actions to
+MW-07. If either the API base URL or caller session is absent, it continues to
+fail closed into clearly labelled prototype content.
 
 ## Circles and Masters
 

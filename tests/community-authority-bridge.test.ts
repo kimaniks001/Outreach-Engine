@@ -122,4 +122,56 @@ describe("SecurePayCommunityClient", () => {
         })
     ).toThrow("Caller-scoped SecurePay accessToken is required");
   });
+
+  it("uses caller authority for join, leave and deliberate feed publishing", async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const path = String(url);
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer caller-token");
+      expect(init?.method).toBe("POST");
+
+      if (path.endsWith("/join")) {
+        return Response.json({
+          communityId: "community-1",
+          role: "MEMBER",
+          status: "ACTIVE",
+          joinedAt: "2026-09-01T10:00:00Z",
+        });
+      }
+      if (path.endsWith("/leave")) return new Response(null, { status: 204 });
+
+      expect(path).toBe("https://securepay.test/communities/community-1/feed");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        title: "A useful update",
+        body: "Shared deliberately with the Community.",
+        visibility: "MEMBER",
+      });
+      return Response.json({
+        id: "post-1",
+        communityId: "community-1",
+        authorIdentityId: "caller-identity",
+        title: "A useful update",
+        body: "Shared deliberately with the Community.",
+        visibility: "MEMBER",
+        publishedAt: "2026-09-01T10:01:00Z",
+        sourceType: null,
+        sourceReferenceId: null,
+      });
+    });
+
+    const client = new SecurePayCommunityClient({
+      baseUrl: "https://securepay.test",
+      accessToken: "caller-token",
+      fetchImpl: fetchMock as typeof fetch,
+    });
+
+    await client.join("community-1");
+    await client.publishFeedPost("community-1", {
+      title: "A useful update",
+      body: "Shared deliberately with the Community.",
+      visibility: "MEMBER",
+    });
+    await client.leave("community-1");
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
 });
