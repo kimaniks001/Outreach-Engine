@@ -6,6 +6,7 @@ import {
 } from "@/lib/market-network/plug-market-authority";
 import { getOpportunityAuthority } from "@/lib/market-network/opportunity-authority";
 import { OpportunityInterestActions } from "@/components/market-network/OpportunityInterestActions";
+import { PlugRelationshipsPanel } from "@/components/market-network/PlugRelationshipsPanel";
 import {
   authoritativeOpportunityEligible,
   getReadinessAuthority,
@@ -166,11 +167,13 @@ export default async function OpportunitiesPage() {
         </>
       )}
 
+      {actor.kind === "SECUREPAY" && <PlugRelationshipsPanel />}
+
       <section className="rounded-xl border border-surface-border bg-surface-raised p-5 md:p-6">
         <p className="text-xs font-medium uppercase tracking-widest text-brand">Matching doctrine</p>
         <h2 className="mt-1 text-lg font-semibold text-ink">Interest is not assignment</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">
-          Learning can increase the market moments a Plug is qualified to see. Saying “I’m interested” only records availability and interest. A later backend authority must separately confirm any customer relationship; this page creates no referral, Lifetime Share, fee, agreement, payment or settlement truth. {readinessPrinciples.opportunity}
+          Learning can increase the market moments a Plug is qualified to see. Saying “I’m interested” only records availability and interest. A customer must separately choose one candidate and explicitly open the relationship. None of those steps creates referral, Lifetime Share, fee, agreement, payment or settlement truth. {readinessPrinciples.opportunity}
         </p>
       </section>
     </div>
