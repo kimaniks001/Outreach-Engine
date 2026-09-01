@@ -5,6 +5,11 @@ import {
   marketRelationshipBoundary,
 } from "@/lib/market-network/customer-market-foundation";
 import {
+  CANDIDATE_PAGE_SIZE,
+  mergeCandidatePage,
+  upsertCustomerRequest,
+} from "@/lib/market-network/customer-market-ui-state";
+import {
   SecurePayMarketRequestError,
   SecurePayPlugMarketClient,
 } from "@/lib/market-network/securepay-plug-market-client";
@@ -29,6 +34,52 @@ describe("Phase 6 customer market doctrine", () => {
     expect(marketRelationshipBoundary.explanation.toLowerCase()).toContain("does not create referral");
     expect(marketRelationshipBoundary.explanation).toContain("10% share");
     expect(marketRelationshipBoundary.contactClosed.toLowerCase()).toContain("will not reveal or infer");
+  });
+
+  it("keeps a successfully created request visible without duplicating it", () => {
+    const created = {
+      requestId: "request-id",
+      requestType: "GENERAL_SECUREPAY_HELP" as const,
+      status: "OPEN" as const,
+      offerId: "offer-id",
+      title: "SecurePay help requested",
+      summary: "A customer is asking for general SecurePay help.",
+      requiredProgramCode: "MARKET_READY" as const,
+      interestedCount: 0,
+      createdAt: "2026-09-01T05:00:00Z",
+      cancelledAt: null,
+    };
+
+    expect(upsertCustomerRequest([], created)).toEqual([created]);
+    expect(upsertCustomerRequest([created], { ...created, interestedCount: 2 })).toEqual([
+      { ...created, interestedCount: 2 },
+    ]);
+  });
+
+  it("merges candidate pages and keeps a load-more path past the first 50", () => {
+    const firstPage = Array.from({ length: CANDIDATE_PAGE_SIZE }, (_, index) => ({
+      candidateRef: `candidate-${index}`,
+      interestedAt: "2026-09-01T05:00:00Z",
+    }));
+    const first = mergeCandidatePage(undefined, firstPage, 0, 75);
+
+    expect(first.items).toHaveLength(50);
+    expect(first.nextOffset).toBe(50);
+    expect(first.hasMore).toBe(true);
+
+    const second = mergeCandidatePage(
+      first,
+      Array.from({ length: 25 }, (_, index) => ({
+        candidateRef: `candidate-${index + 50}`,
+        interestedAt: "2026-09-01T05:01:00Z",
+      })),
+      first.nextOffset,
+      75
+    );
+
+    expect(second.items).toHaveLength(75);
+    expect(second.nextOffset).toBe(75);
+    expect(second.hasMore).toBe(false);
   });
 });
 
@@ -91,6 +142,22 @@ describe("SecurePayPlugMarketClient customer journey", () => {
     });
 
     await client.selectCustomerCandidate("request-id", "candidate-ref");
+  });
+
+  it("forwards explicit candidate pagination to SecurePay", async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => Response.json([]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new SecurePayPlugMarketClient({
+      baseUrl: "https://securepay.test/api/v1",
+      accessToken: "caller-token",
+    });
+
+    await client.getInterestedCandidates("request/id", 50, 100);
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "https://securepay.test/api/v1/market-network/customer-requests/request%2Fid/candidates?limit=50&offset=100"
+    );
   });
 
   it("opens the selected relationship without a client-supplied Plug or contact body", async () => {

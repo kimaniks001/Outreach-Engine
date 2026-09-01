@@ -1,16 +1,17 @@
 # Roadmap
 
-Status: Phase 0–5 COMPLETE — final planned phase closed
-Last updated: 2026-08-11
+Status: Phase 0–6 COMPLETE
+Last updated: 2026-09-01
 
 ## 1. Principle
 
-The Outreach Engine build is intentionally scoped to exactly **six phases**.
-This roadmap is not to be expanded into a long tail of micro-phases. New work
-gets absorbed into the phase it belongs to, or deferred to a later phase —
-it does not create a new phase.
+The original Outreach commercial-engine build was scoped to six phases,
+Phase 0 through Phase 5. Phase 6 is the approved Market Network extension
+that connects those governed capabilities to a caller-scoped SecurePay
+commercial journey. Further work must remain explicitly approved and must not
+be split into a long tail of cosmetic micro-phases.
 
-## 2. The Six Phases
+## 2. The Phases
 
 ### PHASE 0 — Foundation (complete)
 
@@ -69,7 +70,7 @@ Sections 2–4,
 [PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md](PHASE_4_AUDIENCE_MEMORY_ATTRIBUTION_CONVERSION.md),
 and [PHASE_4_COMPLETION_REPORT.md](PHASE_4_COMPLETION_REPORT.md) for status.
 
-### PHASE 5 — Impact + Growth Director + Scale (complete — final planned phase)
+### PHASE 5 — Impact + Growth Director + Scale (complete)
 
 Impact scorecards + never-fabricated ROI/efficiency; real experiments
 evaluated against actual SecurePay behavior with a deterministic winner/
@@ -84,17 +85,23 @@ internal, read-only Analytics API. See
 [PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md](PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md),
 and [PHASE_5_COMPLETION_REPORT.md](PHASE_5_COMPLETION_REPORT.md) for status.
 
+### PHASE 6 — Market Network Commercial Journey (complete)
+
+Caller-scoped SecurePay authentication; Community and market-authority
+bridges; Market Ready learning and opportunity eligibility; customer help
+requests; qualified Plug interest; privacy-safe candidate review; explicit
+selection; and explicit relationship opening. Interest remains separate from
+assignment, relationship, referral provenance, agreement attribution and
+financial entitlement. See
+[PHASE_6_MARKET_NETWORK_COMMERCIAL_JOURNEY_COMPLETION_REPORT.md](PHASE_6_MARKET_NETWORK_COMMERCIAL_JOURNEY_COMPLETION_REPORT.md).
+
 ## 3. Roadmap Status
 
-**All six phases — Phase 0 through Phase 5 — are complete.** Phase 5 was
-built on branch
-`begining-phase-5-impact-growth-director-scale`. **This is the final
-planned phase; no Phase 6 exists or is planned.** Future work beyond this
-roadmap is tracked as post-roadmap enhancements (see
-[PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md](PHASE_5_IMPACT_GROWTH_DIRECTOR_SCALE.md)
-Section 12), not new phases. See
-[PHASE_5_COMPLETION_REPORT.md](PHASE_5_COMPLETION_REPORT.md) for final
-status and classification.
+**Phase 0 through Phase 6 are complete.** Phase 5 closed the original
+commercial-engine roadmap. Phase 6 added the separately approved Market
+Network commercial journey without moving identity, relationship or money
+authority into Outreach. See the Phase 5 and Phase 6 completion reports for
+their respective status and boundaries.
 
 ## 4. Explicitly Deferred Integrations
 

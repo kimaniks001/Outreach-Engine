@@ -79,7 +79,7 @@ export default async function TodayPage() {
         <p className="text-xs font-medium uppercase tracking-widest text-ink-faint">Today</p>
         <h1 className="mt-1 text-2xl font-semibold text-ink">Welcome back, {user.name.split(" ")[0]}</h1>
         <p className="mt-1 text-sm text-ink-muted">
-          A snapshot of the Command Centre. Phase 3 — Targeting + Distribution.
+          A live snapshot of the commercial Command Centre.
         </p>
       </header>
 
