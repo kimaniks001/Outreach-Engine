@@ -195,14 +195,16 @@ export class SecurePayPlugMarketClient {
   }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const headers = new Headers(init.headers);
+    headers.set("accept", "application/json");
+    headers.set("authorization", `Bearer ${this.options.accessToken}`);
+    if (init.body && !headers.has("content-type")) {
+      headers.set("content-type", "application/json");
+    }
+
     const response = await fetch(`${this.options.baseUrl.replace(/\/$/, "")}${path}`, {
       ...init,
-      headers: {
-        accept: "application/json",
-        ...(init.body ? { "content-type": "application/json" } : {}),
-        authorization: `Bearer ${this.options.accessToken}`,
-        ...init.headers,
-      },
+      headers,
       cache: "no-store",
     });
     if (!response.ok) {
