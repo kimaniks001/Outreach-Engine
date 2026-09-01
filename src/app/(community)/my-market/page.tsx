@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
+import { CustomerMarketJourney } from "@/components/market-network/CustomerMarketJourney";
 import { requireCommunityActor } from "@/lib/community/current-community-actor";
 import { getMyMarketSnapshot } from "@/lib/market/my-market-snapshot";
+import { getCustomerMarketAuthority } from "@/lib/market-network/customer-market-authority";
 import {
   lifetimeShareAuthority,
   retentionRewardAuthority,
@@ -10,16 +12,19 @@ import {
 
 export default async function MyMarketPage() {
   const actor = await requireCommunityActor();
-  const snapshot = await getMyMarketSnapshot();
+  const [snapshot, customerMarket] = await Promise.all([
+    getMyMarketSnapshot(),
+    getCustomerMarketAuthority(),
+  ]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-7">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">My Market · private</p>
-          <h1 className="mt-2 text-2xl font-semibold text-ink md:text-3xl">The market you are growing</h1>
+          <h1 className="mt-2 text-2xl font-semibold text-ink md:text-3xl">Your private commercial desk</h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-ink-muted">
-            Relationships, capability and backend-confirmed reward evidence belong here — away from the social feed. Community LIVE is where people see you. My Market is where you privately understand the economic network you are building.
+            Ask the qualified market for help, follow a request into a real relationship, and privately understand the backend-confirmed network and reward evidence around your SecurePay identity. Community LIVE is where people come alive. Money and commercial authority stay quiet here.
           </p>
         </div>
         <Link
@@ -29,6 +34,16 @@ export default async function MyMarketPage() {
           Grow my capability
         </Link>
       </header>
+
+      {customerMarket.status === "CONNECTED" ? (
+        <CustomerMarketJourney authorityStatus="CONNECTED" initialRequests={customerMarket.requests} />
+      ) : (
+        <CustomerMarketJourney
+          authorityStatus="UNAVAILABLE"
+          initialRequests={[]}
+          unavailableReason={customerMarket.reason}
+        />
+      )}
 
       {snapshot.status === "LIVE" ? (
         <LiveMarket snapshot={snapshot} />
@@ -88,14 +103,14 @@ function LiveMarket({ snapshot }: { snapshot: Extract<Awaited<ReturnType<typeof 
       <section className="space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-xs font-medium uppercase tracking-widest text-ink-faint">Your relationships</p>
+            <p className="text-xs font-medium uppercase tracking-widest text-ink-faint">Your referral relationships</p>
             <h2 className="mt-1 text-lg font-semibold text-ink">Who you brought into the market</h2>
           </div>
           <p className="text-xs text-ink-faint">Pending → Activated → Qualified</p>
         </div>
 
         {history.relationships.length === 0 ? (
-          <Card title="Your market starts with one relationship">
+          <Card title="Your referred market starts with one relationship">
             <p className="text-sm leading-6 text-ink-muted">
               SecurePay does not currently have a referred relationship for this identity. When somebody legitimately uses your referral path, backend history will appear here.
             </p>
@@ -134,7 +149,7 @@ function LiveMarket({ snapshot }: { snapshot: Extract<Awaited<ReturnType<typeof 
 function UnavailableMarket({ actorName, reason }: { actorName: string; reason: string }) {
   return (
     <section className="grid grid-cols-1 gap-5 lg:grid-cols-[1.3fr_0.7fr]">
-      <Card title="Your SecurePay market is not connected in this session">
+      <Card title="Your SecurePay referral market is not connected in this session">
         <p className="text-sm leading-6 text-ink-muted">
           {actorName}, {reason.toLowerCase()}.
         </p>
