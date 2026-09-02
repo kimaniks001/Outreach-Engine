@@ -98,7 +98,10 @@ describe("True North Phase 5 incident command", () => {
     const blocker = rows<{ id: string }>(await db.execute(sql`INSERT INTO work_items (work_type,title,queue_id,priority,status,created_by_user_id) VALUES ('TASK',${`Blocking task ${run}`},${queue.id}::uuid,'HIGH','READY',${commander}::uuid) RETURNING id::text`))[0];
     if (!blocker) throw new Error("blocking work setup failed");
     await db.execute(sql`INSERT INTO work_dependencies (work_item_id,depends_on_work_item_id,created_by_user_id) VALUES (${incident.workItemId}::uuid,${blocker.id}::uuid,${commander}::uuid)`);
-    await expect(transitionIncident({ actorUserId: commander, incidentId: id, state: "RESOLVED", resolutionSummary: "Mitigation complete." })).rejects.toThrow("blocking dependencies");
+    await expect(transitionIncident({ actorUserId: commander, incidentId: id, state: "RESOLVED", resolutionSummary: "Mitigation complete." })).rejects.toThrow();
+    expect((await getIncident(commander, id)).state).toBe("INVESTIGATING");
+    const workAfterRejectedResolution = rows<{ status: string }>(await db.execute(sql`SELECT status::text AS status FROM work_items WHERE id=${incident.workItemId}::uuid`))[0];
+    expect(workAfterRejectedResolution?.status).toBe("IN_PROGRESS");
     await db.execute(sql`DELETE FROM work_dependencies WHERE work_item_id=${incident.workItemId}::uuid AND depends_on_work_item_id=${blocker.id}::uuid`);
     await db.execute(sql`DELETE FROM work_items WHERE id=${blocker.id}::uuid`);
     await transitionIncident({ actorUserId: commander, incidentId: id, state: "RESOLVED", resolutionSummary: "Mitigation complete.", rootCauseSummary: "Operational dependency was corrected." });
