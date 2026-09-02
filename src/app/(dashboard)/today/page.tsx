@@ -15,6 +15,7 @@ import { listDistributionPlans } from "@/lib/distribution/plans";
 import { listAllExecutions } from "@/lib/distribution/executions";
 import { countApprovedBudgets } from "@/lib/distribution/budget-guard";
 import { countAuditEventsByType } from "@/lib/audit/log";
+import { getMyWorkAttentionCount } from "@/lib/work/work-engine";
 
 type AttentionItem = {
   label: string;
@@ -34,7 +35,12 @@ type PulseItem = {
 export default async function TodayPage() {
   const user = await requireSection("TODAY");
 
-  const [providers, safeMode, dbOk] = await Promise.all([listProviders(), getSafeMode(), pingDatabase()]);
+  const [providers, safeMode, dbOk, myWorkAttention] = await Promise.all([
+    listProviders(),
+    getSafeMode(),
+    pingDatabase(),
+    getMyWorkAttentionCount(user.id),
+  ]);
 
   const providerCounts = {
     available: providers.filter((p) => p.status === "AVAILABLE").length,
@@ -82,6 +88,7 @@ export default async function TodayPage() {
   const executionsRunning = executions.filter((e) => e.status === "RUNNING").length;
 
   const attention: AttentionItem[] = [];
+  if (myWorkAttention > 0) attention.push({ label: "Work needs you", detail: "Urgent, critical, near-SLA or near-due responsibility is assigned to you.", count: myWorkAttention, href: "/work", tone: "attention" });
   if (canApproveOpportunities && opportunitiesAwaitingReview > 0) attention.push({ label: "Opportunity review", detail: "Market opportunities are waiting for your judgement.", count: opportunitiesAwaitingReview, href: "/intelligence", tone: "attention" });
   if (canApproveCampaigns && campaignsAwaitingApproval > 0) attention.push({ label: "Campaign approval", detail: "Campaigns are ready for an authorised decision.", count: campaignsAwaitingApproval, href: "/approvals", tone: "attention" });
   if (campaignsBlocked > 0) attention.push({ label: "Campaigns need revision", detail: "Brand Guardian or workflow state has stopped these from moving forward.", count: campaignsBlocked, href: "/campaigns", tone: "blocked" });
@@ -131,7 +138,7 @@ export default async function TodayPage() {
               <span className="pb-1.5 text-sm text-white/70">across {attention.length} work {attention.length === 1 ? "type" : "types"}</span>
             </div>
             <div className="mt-5 border-t border-white/15 pt-4 text-sm leading-6 text-white/75">
-              Today only counts real records already visible to your role. Trader cases, incidents and staff messages will join this view as their roadmap phases land.
+              Today only counts real records already visible to your role. Work ownership and SLA attention are live; trader cases and incidents join as their roadmap phases land.
             </div>
           </div>
         </div>
@@ -144,7 +151,7 @@ export default async function TodayPage() {
             {attention.length === 0 ? (
               <div className="rounded-2xl border border-brand/15 bg-brand-soft/35 px-5 py-6">
                 <p className="font-display text-2xl text-brand-muted">Quiet right now.</p>
-                <p className="mt-2 max-w-xl text-sm leading-6 text-ink-muted">No approval, review, revision or ready-to-move item currently needs you. You can use the breathing room to inspect Growth or Community LIVE.</p>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-ink-muted">No owned work, approval, review, revision or ready-to-move item currently needs you. You can use the breathing room to inspect Work, Growth or Community LIVE.</p>
               </div>
             ) : (
               attention.map((item) => <AttentionRow key={`${item.href}-${item.label}`} item={item} />)
@@ -184,7 +191,7 @@ export default async function TodayPage() {
         <div className="rounded-3xl border border-surface-border bg-surface-inverse p-6 text-ink-inverse shadow-quiet sm:p-7">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/55">True North</p>
           <h2 className="mt-3 max-w-xl font-display text-3xl leading-tight">One place to know what needs you, who needs help and what happens next.</h2>
-          <p className="mt-4 max-w-2xl text-sm leading-6 text-white/68">The shell is intentionally getting simpler while the operating system underneath gets richer. Conversations, Work, Traders, Operations and People will feed this same personal view instead of becoming competing dashboards.</p>
+          <p className="mt-4 max-w-2xl text-sm leading-6 text-white/68">The shell is intentionally getting simpler while the operating system underneath gets richer. Conversations and Work already feed this personal view; Traders, Operations and People will join without becoming competing dashboards.</p>
         </div>
 
         {canSeeUsage ? (
@@ -212,10 +219,10 @@ export default async function TodayPage() {
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-faint">Coming into Today</p>
             <h2 className="mt-2 font-display text-2xl text-ink">The rest of your working day.</h2>
             <div className="mt-4 space-y-3 text-sm text-ink-muted">
-              <RoadmapRow phase="2" label="Messages, mentions and working circles" />
-              <RoadmapRow phase="3" label="Tasks, queues, schedules and follow-ups" />
               <RoadmapRow phase="4" label="Trader cases and support hand-offs" />
               <RoadmapRow phase="5" label="Incidents and operational attention" />
+              <RoadmapRow phase="6" label="Presence, handovers and remote-team rhythms" />
+              <RoadmapRow phase="7" label="People, culture and growth" />
             </div>
           </div>
         )}
