@@ -29,12 +29,8 @@ CREATE TABLE IF NOT EXISTS operations_incidents (
   created_by_user_id uuid NOT NULL REFERENCES users(id),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT operations_incidents_release_evidence_check CHECK (
-    communication_state <> 'RELEASED' OR communication_release_evidence_ref IS NOT NULL
-  ),
-  CONSTRAINT operations_incidents_resolution_check CHECK (
-    state NOT IN ('RESOLVED','CLOSED') OR (resolved_at IS NOT NULL AND resolution_summary IS NOT NULL)
-  )
+  CONSTRAINT operations_incidents_release_evidence_check CHECK (communication_state <> 'RELEASED' OR communication_release_evidence_ref IS NOT NULL),
+  CONSTRAINT operations_incidents_resolution_check CHECK (state NOT IN ('RESOLVED','CLOSED') OR (resolved_at IS NOT NULL AND resolution_summary IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS operations_incidents_state_severity_idx ON operations_incidents(state, severity, detected_at DESC);
 CREATE INDEX IF NOT EXISTS operations_incidents_commander_idx ON operations_incidents(commander_user_id, state);
@@ -81,8 +77,27 @@ CREATE TABLE IF NOT EXISTS operations_service_signals (
 );
 CREATE INDEX IF NOT EXISTS operations_service_signals_service_time_idx ON operations_service_signals(service_key, last_observed_at DESC);
 
+CREATE OR REPLACE FUNCTION guard_incident_terminal_work_dependencies() RETURNS trigger AS $$
+BEGIN
+  IF NEW.state IN ('RESOLVED','CLOSED') AND OLD.state IS DISTINCT FROM NEW.state AND EXISTS (
+    SELECT 1 FROM work_dependencies wd
+    JOIN work_items dependency ON dependency.id = wd.depends_on_work_item_id
+    WHERE wd.work_item_id = NEW.work_item_id AND dependency.status NOT IN ('DONE','CANCELLED')
+  ) THEN
+    RAISE EXCEPTION 'Complete or cancel blocking dependencies before resolving this incident';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS operations_incident_terminal_dependency_guard ON operations_incidents;
+CREATE TRIGGER operations_incident_terminal_dependency_guard
+BEFORE UPDATE OF state ON operations_incidents
+FOR EACH ROW EXECUTE FUNCTION guard_incident_terminal_work_dependencies();
+
 COMMENT ON TABLE operations_incidents IS
   'Outreach internal incident coordination. Incident state never changes SecurePay payment, agreement, identity, release, settlement, ledger or provider authority.';
+COMMENT ON COLUMN operations_incidents.affected_trader_count IS
+  'Operator impact estimate until a separately authorised SecurePay projection provides an authoritative affected-trader count.';
 COMMENT ON COLUMN operations_incidents.communication_release_evidence_ref IS
   'Evidence that an authorised external communication workflow released a message. Recording evidence here does not publish anything.';
 COMMENT ON TABLE operations_service_signals IS
