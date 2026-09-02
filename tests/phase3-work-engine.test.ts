@@ -76,6 +76,7 @@ describe("True North Phase 3 work engine", () => {
     expect(item.nextAction).toContain("Read the draft");
     const history = await listWorkHistory(strategistA, id);
     expect(history.some((entry) => entry.eventType === "WORK_CREATED")).toBe(true);
+    expect(history[0]?.createdAt).toBeInstanceOf(Date);
   });
 
   it("routes by explainable role, language, availability and workload instead of hidden AI authority", async () => {
@@ -143,10 +144,10 @@ describe("True North Phase 3 work engine", () => {
         FROM work_items
        WHERE routing_reason = ${`Created from recurring work item ${id}`}
     `);
-    const next = resultRows<{ id: string; recurrenceRule: string; scheduledFor: Date; status: string }>(result)[0];
+    const next = resultRows<{ id: string; recurrenceRule: string; scheduledFor: string; status: string }>(result)[0];
     expect(next?.recurrenceRule).toBe("WEEKLY");
     expect(next?.status).toBe("READY");
-    expect(next?.scheduledFor.toISOString()).toBe("2026-09-10T08:00:00.000Z");
+    expect(next?.scheduledFor ? new Date(next.scheduledFor).toISOString() : null).toBe("2026-09-10T08:00:00.000Z");
     if (next?.id) workItems.push(next.id);
   });
 
