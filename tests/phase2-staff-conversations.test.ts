@@ -47,8 +47,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (createdConversations.length > 0) {
-    await db.execute(sql`DELETE FROM staff_conversations WHERE id = ANY(${createdConversations}::uuid[])`);
+  for (const conversationId of new Set(createdConversations)) {
+    await db.execute(sql`DELETE FROM staff_conversations WHERE id = ${conversationId}::uuid`);
   }
   await db.execute(sql`DELETE FROM users WHERE id IN (${alice}::uuid, ${bob}::uuid, ${charlie}::uuid)`);
 });
