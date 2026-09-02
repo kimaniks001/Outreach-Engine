@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/rbac/guard";
-import { listConversationMessages, listSupportCases } from "@/lib/trader-support/support-engine";
+import { listVisibleConversationMessages, listVisibleSupportCases } from "@/lib/trader-support/support-visibility";
 
 export default async function TraderCaseRoomPage({ params }: { params: Promise<{ caseId: string }> }) {
   const user = await requireUser();
   const { caseId } = await params;
-  const supportCase = (await listSupportCases()).find((item) => item.id === caseId);
+  const supportCase = (await listVisibleSupportCases(user.id)).find((item) => item.id === caseId);
   if (!supportCase) notFound();
-  const messages = await listConversationMessages(supportCase.conversationId);
+  const messages = await listVisibleConversationMessages(user.id, supportCase.conversationId);
 
   return (
     <div className="mx-auto max-w-6xl outreach-rise">
