@@ -14,7 +14,7 @@ export interface IncidentSummary {
 export interface IncidentChronologyEntry { id: string; eventType: string; actorName: string | null; note: string; metadata: Record<string, unknown>; createdAt: Date; }
 export interface ServiceSignal { id: string; signalKey: string; serviceKey: string; signalKind: string; severityHint: IncidentSeverity | null; observedCount: number; firstObservedAt: Date; lastObservedAt: Date; evidenceRef: string; proposedIncidentId: string | null; }
 
-type Tx = { execute: (query: unknown) => Promise<unknown> };
+type Tx = Pick<typeof db, "execute">;
 
 export async function openIncident(input: { actorUserId: string; title: string; summary?: string; severity: IncidentSeverity; affectedService: string; commanderUserId?: string; affectedTraderCount?: number; }): Promise<string> {
   const actor = await requireActiveStaff(input.actorUserId);
