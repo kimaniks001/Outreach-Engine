@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/rbac/guard";
-import { listFrictionSummary, listSupportCases, listSupportConversations } from "@/lib/trader-support/support-engine";
+import { listFrictionSummary } from "@/lib/trader-support/support-engine";
+import { listVisibleSupportCases, listVisibleSupportConversations } from "@/lib/trader-support/support-visibility";
 
 export default async function TradersPage() {
   const user = await requireUser();
   const [conversations, cases, friction] = await Promise.all([
-    listSupportConversations(),
-    listSupportCases(),
+    listVisibleSupportConversations(user.id),
+    listVisibleSupportCases(user.id),
     listFrictionSummary(),
   ]);
   const openCases = cases.filter((item) => item.state !== "RESOLVED" && item.state !== "CLOSED");
