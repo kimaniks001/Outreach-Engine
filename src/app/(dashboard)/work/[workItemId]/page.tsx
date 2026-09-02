@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/rbac/guard";
 import { getWorkItem, listRoutingProfiles, listWorkHistory, listWorkItems, type WorkStatus } from "@/lib/work/work-engine";
-import { addCollaboratorAction, addDependencyAction, assignOwnerAction, claimWorkAction, routeWorkAction, statusWorkAction } from "../actions";
+import { listWorkHandovers } from "@/lib/people/remote-team";
+import { addCollaboratorAction, addDependencyAction, assignOwnerAction, claimWorkAction, handoverWorkAction, routeWorkAction, statusWorkAction } from "../actions";
 
 const CONTROL = "w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2 text-sm text-ink outline-none focus:border-brand/40";
 
@@ -11,10 +12,11 @@ export default async function WorkDetailPage({ params }: { params: Promise<{ wor
   const { workItemId } = await params;
   let item;
   try { item = await getWorkItem(user.id, workItemId); } catch { notFound(); }
-  const [history, people, visibleItems] = await Promise.all([
+  const [history, people, visibleItems, handovers] = await Promise.all([
     listWorkHistory(user.id, workItemId),
     listRoutingProfiles(),
     listWorkItems(user.id, user.role === "OWNER"),
+    listWorkHandovers(user.id,workItemId),
   ]);
   const dependencies = visibleItems.filter((candidate) => candidate.id !== item.id && !["DONE","CANCELLED"].includes(candidate.status));
   const terminal = ["DONE", "CANCELLED"].includes(item.status);
@@ -70,6 +72,7 @@ export default async function WorkDetailPage({ params }: { params: Promise<{ wor
               <form action={statusWorkAction} className="flex gap-2"><input type="hidden" name="workItemId" value={item.id} /><select name="status" className={CONTROL} defaultValue={nextStatuses(item.status)[0] ?? item.status}>{nextStatuses(item.status).map((status) => <option key={status}>{status}</option>)}</select><button className="rounded-xl border border-surface-border px-3 text-xs font-semibold text-ink-muted">Move</button></form>
             </div>
           </section> : null}
+          {!terminal&&item.ownerUserId===user.id&&item.workType!=="INCIDENT"?<section className="rounded-[24px] border border-surface-border bg-surface-raised p-5 shadow-sm"><p className="text-[10px] font-semibold uppercase tracking-[.2em] text-brand">Handover</p><form action={handoverWorkAction} className="mt-3 space-y-2"><input type="hidden" name="workItemId" value={item.id}/><select name="toUserId" defaultValue="" className={CONTROL}><option value="" disabled>Choose next owner</option>{people.filter(p=>p.userId!==user.id).map(p=><option key={p.userId} value={p.userId}>{p.name} · {p.timezone}</option>)}</select><textarea name="summary" required maxLength={4000} placeholder="What has happened and what matters?" className={CONTROL}/><input name="nextAction" required maxLength={500} defaultValue={item.nextAction} placeholder="Exact next action" className={CONTROL}/><button className="rounded-xl bg-brand px-3 py-2 text-xs font-semibold text-white">Hand over with context</button></form>{handovers.length?<p className="mt-3 text-xs text-ink-faint">{handovers.length} immutable handover{handovers.length===1?"":"s"} recorded</p>:null}</section>:null}
 
           {!terminal ? <section className="rounded-[24px] border border-surface-border bg-surface-raised p-5 shadow-sm">
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-ink-faint">Ownership</p>
