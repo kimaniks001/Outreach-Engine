@@ -258,12 +258,12 @@ export async function routeWorkItem(actorUserId: string, workItemId: string): Pr
   await requireManageAccess(actorUserId, workItemId);
   return db.transaction(async (tx) => {
     const itemResult = await tx.execute(sql`
-      SELECT w.id::text AS id, w.required_role::text AS "requiredRole", w.required_language AS "requiredLanguage",
+      SELECT w.id::text AS id, w.queue_id::text AS "queueId", w.required_role::text AS "requiredRole", w.required_language AS "requiredLanguage",
              w.preferred_timezone AS "preferredTimezone", q.default_role::text AS "defaultRole", w.status::text AS status
         FROM work_items w JOIN work_queues q ON q.id = w.queue_id
        WHERE w.id = ${workItemId}::uuid FOR UPDATE
     `);
-    const item = rows<{ id: string; requiredRole: string | null; requiredLanguage: string | null; preferredTimezone: string | null; defaultRole: string | null; status: WorkStatus }>(itemResult)[0];
+    const item = rows<{ id: string; queueId:string; requiredRole: string | null; requiredLanguage: string | null; preferredTimezone: string | null; defaultRole: string | null; status: WorkStatus }>(itemResult)[0];
     if (!item || ["DONE", "CANCELLED"].includes(item.status)) throw new Error("Work item is unavailable");
     const role = item.requiredRole ?? item.defaultRole;
     const candidatesResult = await tx.execute(sql`
@@ -271,10 +271,16 @@ export async function routeWorkItem(actorUserId: string, workItemId: string): Pr
              (SELECT count(*)::int FROM work_items active WHERE active.owner_user_id = u.id AND active.status NOT IN ('DONE','CANCELLED')) AS "activeWork"
         FROM users u
         JOIN work_routing_profiles rp ON rp.user_id = u.id
-       WHERE u.active = TRUE AND rp.available = TRUE
+       WHERE u.active = TRUE AND rp.available = TRUE AND rp.presence_status IN ('AVAILABLE','FOCUSED')
          AND (${role}::role IS NULL OR u.role = ${role}::role)
          AND (${item.requiredLanguage}::text IS NULL OR rp.languages @> ARRAY[${item.requiredLanguage}]::text[])
+         AND (
+           (extract(dow FROM now() AT TIME ZONE rp.timezone)::int = ANY(rp.working_days)
+             AND (now() AT TIME ZONE rp.timezone)::time BETWEEN rp.local_start AND rp.local_end)
+           OR EXISTS (SELECT 1 FROM team_coverage_shifts shift WHERE shift.user_id=u.id AND shift.queue_id=${item.queueId}::uuid AND shift.status IN ('SCHEDULED','ACTIVE') AND now() BETWEEN shift.starts_at AND shift.ends_at)
+         )
        ORDER BY
+         CASE WHEN EXISTS (SELECT 1 FROM team_coverage_shifts shift WHERE shift.user_id=u.id AND shift.queue_id=${item.queueId}::uuid AND shift.status IN ('SCHEDULED','ACTIVE') AND now() BETWEEN shift.starts_at AND shift.ends_at) THEN 0 ELSE 1 END,
          CASE WHEN ${item.preferredTimezone}::text IS NOT NULL AND rp.timezone = ${item.preferredTimezone} THEN 0 ELSE 1 END,
          (SELECT count(*) FROM work_items active WHERE active.owner_user_id = u.id AND active.status NOT IN ('DONE','CANCELLED')) ASC,
          u.name ASC
@@ -282,7 +288,7 @@ export async function routeWorkItem(actorUserId: string, workItemId: string): Pr
     const candidates = rows<RoutingProfile>(candidatesResult).filter((candidate) => Number(candidate.activeWork) < Number(candidate.maxActiveWork));
     const selected = candidates[0];
     if (!selected) throw new Error("No currently available team member matches this work item. Leave it in queue or adjust routing requirements.");
-    const reason = `Routed to ${selected.name}: available; role ${selected.role}; active load ${selected.activeWork}/${selected.maxActiveWork}${item.requiredLanguage ? `; language ${item.requiredLanguage}` : ""}${item.preferredTimezone && selected.timezone === item.preferredTimezone ? `; timezone ${item.preferredTimezone}` : ""}.`;
+    const reason = `Routed to ${selected.name}: currently available in working-hours or explicit coverage; role ${selected.role}; active load ${selected.activeWork}/${selected.maxActiveWork}${item.requiredLanguage ? `; language ${item.requiredLanguage}` : ""}${item.preferredTimezone && selected.timezone === item.preferredTimezone ? `; timezone ${item.preferredTimezone}` : ""}.`;
     await tx.execute(sql`UPDATE work_items SET owner_user_id = ${selected.userId}::uuid, status = CASE WHEN status = 'INBOX' THEN 'READY'::work_item_status ELSE status END, routing_reason = ${reason}, updated_at = now() WHERE id = ${workItemId}::uuid`);
     await appendHistoryTx(tx, workItemId, "WORK_ROUTED", actorUserId, { ownerUserId: selected.userId, reason });
     return selected.userId;
