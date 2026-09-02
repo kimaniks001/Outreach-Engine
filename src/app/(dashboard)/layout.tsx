@@ -7,9 +7,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const allowedSections = sectionsForRole(user.role);
 
   return (
-    <div className="flex min-h-screen">
+    <div className="min-h-screen lg:flex">
       <Sidebar role={user.role} userName={user.name} allowedSections={allowedSections} />
-      <main className="flex-1 overflow-y-auto px-8 py-8">{children}</main>
+      <main className="min-w-0 flex-1 px-4 pb-10 pt-28 sm:px-6 lg:px-8 lg:py-8 xl:px-10">
+        {children}
+      </main>
     </div>
   );
 }
