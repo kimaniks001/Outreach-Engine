@@ -49,7 +49,7 @@ export default async function TradersPage() {
                 <p className="mt-2 text-sm leading-6 text-ink-muted">New support needs will appear here with an owner, queue, priority, SLA and next action.</p>
               </div>
             ) : openCases.map((item) => (
-              <Link key={item.id} href={`/work/${item.workItemId}`} className="block rounded-2xl border border-surface-border bg-surface-raised p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-float">
+              <Link key={item.id} href={`/traders/cases/${item.id}`} className="block rounded-2xl border border-surface-border bg-surface-raised p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-float">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint"><span>{item.priority}</span><span>·</span><span>{item.state.replaceAll("_", " ")}</span></div>
