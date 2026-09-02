@@ -2,6 +2,12 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import type { SupportCaseSummary, SupportConversationSummary, SupportMessage } from "@/lib/trader-support/support-engine";
 
+export interface VisibleSupportContextTarget {
+  caseId: string;
+  conversationId: string;
+  securepayIdentityRef: string;
+}
+
 export async function listVisibleSupportCases(userId: string): Promise<SupportCaseSummary[]> {
   const role = await requireActiveStaff(userId);
   const result = await db.execute(sql`
@@ -56,15 +62,30 @@ export async function listVisibleConversationMessages(userId: string, conversati
 }
 
 export async function requireSupportCaseVisibility(userId: string, caseId: string): Promise<void> {
+  await visibleSupportContextTarget(userId, caseId);
+}
+
+/**
+ * Resolves the backend support lookup target only after the Outreach Work-participant privacy check.
+ * The trader reference is always derived from the case's linked conversation; callers cannot nominate
+ * another trader reference while reusing a visible case id.
+ */
+export async function visibleSupportContextTarget(userId: string, caseId: string): Promise<VisibleSupportContextTarget> {
   const role = await requireActiveStaff(userId);
   const result = await db.execute(sql`
-    SELECT 1 FROM trader_support_cases c JOIN work_items w ON w.id = c.work_item_id
+    SELECT c.id::text AS "caseId", c.conversation_id::text AS "conversationId",
+           conversation.securepay_identity_ref AS "securepayIdentityRef"
+      FROM trader_support_cases c
+      JOIN work_items w ON w.id = c.work_item_id
+      JOIN trader_support_conversations conversation ON conversation.id = c.conversation_id
      WHERE c.id = ${caseId}::uuid AND (
        ${role === "OWNER"} = TRUE OR w.owner_user_id = ${userId}::uuid OR w.created_by_user_id = ${userId}::uuid OR w.owner_user_id IS NULL
        OR EXISTS (SELECT 1 FROM work_collaborators wc WHERE wc.work_item_id = w.id AND wc.user_id = ${userId}::uuid)
      ) LIMIT 1
   `);
-  if (rows(result).length === 0) throw new Error("Support case is unavailable");
+  const target = rows<VisibleSupportContextTarget>(result)[0];
+  if (!target) throw new Error("Support case is unavailable");
+  return target;
 }
 
 async function requireConversationVisibility(userId: string, conversationId: string): Promise<void> {
