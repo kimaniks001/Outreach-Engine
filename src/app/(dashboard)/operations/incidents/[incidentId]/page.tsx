@@ -18,7 +18,7 @@ export default async function IncidentRoomPage({ params }: { params: Promise<{ i
     <div className="mx-auto max-w-7xl outreach-rise">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link href="/operations" className="text-sm font-semibold text-brand hover:text-brand-muted">← Operations</Link>
-        <div className="flex gap-2"><Link href={`/work/${incident.workItemId}`} className="rounded-full border border-surface-border px-4 py-2 text-sm font-semibold text-ink">Work responsibility</Link><Link href={`/conversations/${incident.conversationId}`} className="rounded-full border border-brand/25 px-4 py-2 text-sm font-semibold text-brand">Incident conversation</Link></div>
+        <div className="flex gap-2"><Link href={`/work/${incident.workItemId}`} className="rounded-full border border-surface-border px-4 py-2 text-sm font-semibold text-ink">Work responsibility</Link><Link href={`/conversations?conversation=${incident.conversationId}`} className="rounded-full border border-brand/25 px-4 py-2 text-sm font-semibold text-brand">Incident conversation</Link></div>
       </div>
 
       <section className="mt-5 overflow-hidden rounded-[30px] border border-brand/15 bg-surface-raised shadow-quiet">
