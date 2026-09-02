@@ -27,7 +27,6 @@ const userIds: string[] = [];
 const incidentIds: string[] = [];
 const supportConversationIds: string[] = [];
 const supportCaseIds: string[] = [];
-const signalRefs: string[] = [];
 
 function rows<T>(result: unknown): T[] { return ((result as { rows?: T[] }).rows ?? []); }
 async function createStaff(name: string, role: "OWNER" | "STRATEGIST" = "STRATEGIST") {
@@ -95,7 +94,9 @@ describe("True North Phase 5 incident command", () => {
     await expect(transitionIncident({ actorUserId: commander, incidentId: id, state: "RESOLVED" })).rejects.toThrow("resolution summary");
     const incident = await getIncident(commander, id);
     const queue = rows<{ id: string }>(await db.execute(sql`SELECT id::text AS id FROM work_queues WHERE queue_key='OPERATIONS' LIMIT 1`))[0];
+    if (!queue) throw new Error("operations queue missing in test setup");
     const blocker = rows<{ id: string }>(await db.execute(sql`INSERT INTO work_items (work_type,title,queue_id,priority,status,created_by_user_id) VALUES ('TASK',${`Blocking task ${run}`},${queue.id}::uuid,'HIGH','READY',${commander}::uuid) RETURNING id::text`))[0];
+    if (!blocker) throw new Error("blocking work setup failed");
     await db.execute(sql`INSERT INTO work_dependencies (work_item_id,depends_on_work_item_id,created_by_user_id) VALUES (${incident.workItemId}::uuid,${blocker.id}::uuid,${commander}::uuid)`);
     await expect(transitionIncident({ actorUserId: commander, incidentId: id, state: "RESOLVED", resolutionSummary: "Mitigation complete." })).rejects.toThrow("blocking dependencies");
     await db.execute(sql`DELETE FROM work_dependencies WHERE work_item_id=${incident.workItemId}::uuid AND depends_on_work_item_id=${blocker.id}::uuid`);
@@ -147,7 +148,6 @@ describe("True North Phase 5 incident command", () => {
     await db.execute(sql`DELETE FROM work_items WHERE id=${preventionId}::uuid`);
 
     const evidence = `incident-test:${run}:signal`;
-    signalRefs.push(evidence);
     await recordServiceSignal({ actorUserId: commander, signalKey: `settlement-delay-${run}`, serviceKey: "settlement", signalKind: "repeat-failure", severityHint: "SEV2", evidenceRef: evidence, observedCount: 2 });
     await recordServiceSignal({ actorUserId: commander, signalKey: `settlement-delay-${run}`, serviceKey: "settlement", signalKind: "repeat-failure", severityHint: "SEV2", evidenceRef: evidence, observedCount: 3 });
     const signal = (await listServiceSignals(commander, 100)).find((item) => item.evidenceRef === evidence);
