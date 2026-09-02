@@ -1,16 +1,78 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Instrument+Sans:wght@400;500;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
+  --outreach-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 html,
 body {
-  height: 100%;
+  min-height: 100%;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 body {
-  @apply bg-surface text-ink antialiased;
+  @apply bg-surface font-sans text-ink antialiased;
+  background-image:
+    radial-gradient(circle at 9% 7%, rgba(202, 223, 207, 0.38), transparent 24rem),
+    radial-gradient(circle at 94% 2%, rgba(240, 200, 166, 0.24), transparent 22rem);
+  background-attachment: fixed;
+}
+
+::selection {
+  @apply bg-brand text-white;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(85, 96, 90, 0.28) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(85, 96, 90, 0.24);
+}
+
+@keyframes outreach-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes outreach-breathe {
+  0%, 100% { opacity: 0.28; transform: scale(0.96); }
+  50% { opacity: 0.62; transform: scale(1.04); }
+}
+
+.outreach-rise {
+  animation: outreach-rise 0.58s var(--outreach-ease) both;
+}
+
+.outreach-living-ring {
+  animation: outreach-breathe 3.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .outreach-rise,
+  .outreach-living-ring {
+    animation: none !important;
+  }
 }
