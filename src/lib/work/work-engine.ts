@@ -292,6 +292,7 @@ export async function routeWorkItem(actorUserId: string, workItemId: string): Pr
 export async function updateWorkStatus(actorUserId: string, workItemId: string, nextStatus: WorkStatus): Promise<void> {
   await requireManageAccess(actorUserId, workItemId);
   await db.transaction(async (tx) => {
+    await assertNotIncidentCommandWorkTx(tx, workItemId);
     const currentResult = await tx.execute(sql`SELECT status::text AS status, recurrence_rule AS "recurrenceRule", scheduled_for AS "scheduledFor", due_at AS "dueAt", sla_due_at AS "slaDueAt" FROM work_items WHERE id = ${workItemId}::uuid FOR UPDATE`);
     const current = rows<{ status: WorkStatus; recurrenceRule: RecurrenceRule | null; scheduledFor: Date | string | null; dueAt: Date | string | null; slaDueAt: Date | string | null }>(currentResult)[0];
     if (!current) throw new Error("Work item is unavailable");
@@ -315,8 +316,11 @@ export async function updateWorkStatus(actorUserId: string, workItemId: string, 
 export async function assignWorkOwner(actorUserId: string, workItemId: string, ownerUserId: string | null): Promise<void> {
   await requireManageAccess(actorUserId, workItemId);
   if (ownerUserId) await requireActiveStaff(ownerUserId);
-  await db.execute(sql`UPDATE work_items SET owner_user_id = ${ownerUserId}::uuid, status = CASE WHEN ${ownerUserId}::uuid IS NOT NULL AND status = 'INBOX' THEN 'READY'::work_item_status ELSE status END, routing_reason = ${ownerUserId ? "Assigned by team member" : "Returned to queue"}, updated_at = now() WHERE id = ${workItemId}::uuid`);
-  await appendHistory(workItemId, ownerUserId ? "OWNER_ASSIGNED" : "RETURNED_TO_QUEUE", actorUserId, { ownerUserId });
+  await db.transaction(async (tx) => {
+    await assertNotIncidentCommandWorkTx(tx, workItemId);
+    await tx.execute(sql`UPDATE work_items SET owner_user_id = ${ownerUserId}::uuid, status = CASE WHEN ${ownerUserId}::uuid IS NOT NULL AND status = 'INBOX' THEN 'READY'::work_item_status ELSE status END, routing_reason = ${ownerUserId ? "Assigned by team member" : "Returned to queue"}, updated_at = now() WHERE id = ${workItemId}::uuid`);
+    await appendHistoryTx(tx, workItemId, ownerUserId ? "OWNER_ASSIGNED" : "RETURNED_TO_QUEUE", actorUserId, { ownerUserId });
+  });
 }
 
 export async function addCollaborator(actorUserId: string, workItemId: string, collaboratorUserId: string): Promise<void> {
@@ -445,6 +449,11 @@ async function appendHistory(workItemId: string, eventType: string, actorUserId:
 
 async function appendHistoryTx(tx: any, workItemId: string, eventType: string, actorUserId: string | null, metadata: Record<string, unknown>): Promise<void> {
   await tx.execute(sql`INSERT INTO work_history (work_item_id, event_type, actor_user_id, metadata) VALUES (${workItemId}::uuid, ${eventType}, ${actorUserId}::uuid, CAST(${JSON.stringify(metadata)} AS jsonb))`);
+}
+
+async function assertNotIncidentCommandWorkTx(tx: any, workItemId: string): Promise<void> {
+  const linked = await tx.execute(sql`SELECT 1 FROM operations_incidents WHERE work_item_id = ${workItemId}::uuid LIMIT 1`);
+  if (rows(linked).length > 0) throw new Error("Manage incident state and commander from Incident Command");
 }
 
 async function createNextRecurrenceTx(tx: any, completedId: string, actorUserId: string, current: { recurrenceRule: RecurrenceRule | null; scheduledFor: Date | string | null; dueAt: Date | string | null; slaDueAt: Date | string | null }): Promise<void> {
