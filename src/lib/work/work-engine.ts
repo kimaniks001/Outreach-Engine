@@ -207,7 +207,7 @@ export async function convertConversationDraftToWork(actorUserId: string, draftI
         JOIN staff_conversation_members member ON member.conversation_id = d.conversation_id AND member.user_id = ${actorUserId}::uuid
         LEFT JOIN staff_messages msg ON msg.id = d.source_message_id
        WHERE d.id = ${draftId}::uuid
-       FOR UPDATE
+       FOR UPDATE OF d
     `);
     const draft = rows<{ id: string; status: string; actionType: string; conversationId: string; sourceMessageId: string | null; body: string | null; convertedWorkItemId: string | null }>(result)[0];
     if (!draft) throw new Error("Conversation action draft is unavailable");
@@ -216,14 +216,16 @@ export async function convertConversationDraftToWork(actorUserId: string, draftI
 
     const type = workTypeFromDraft(draft.actionType);
     const queue = await resolveQueueTx(tx, queueForType(type));
-    const title = cleanText(draft.body || `${labelForType(type)} from conversation`, 2, 180, "Work title");
+    const fallbackTitle = `${labelForType(type)} from conversation`;
+    const sourceTitle = (draft.body || fallbackTitle).trim();
+    const title = (sourceTitle.length >= 2 ? sourceTitle : fallbackTitle).slice(0, 180);
     const priority: WorkPriority = type === "INCIDENT" ? "URGENT" : "NORMAL";
     const inserted = await tx.execute(sql`
       INSERT INTO work_items (
         work_type, title, context, next_action, queue_id, priority, status, sla_due_at,
         source_conversation_id, source_message_id, source_action_draft_id, created_by_user_id
       ) VALUES (
-        ${type}::work_item_type, ${title.slice(0, 180)}, 'Created from a staff conversation action draft.',
+        ${type}::work_item_type, ${title}, 'Created from a staff conversation action draft.',
         'Assign an owner and agree the next action.', ${queue.id}::uuid, ${priority}::work_priority, 'INBOX',
         ${defaultSlaDue(priority)}, ${draft.conversationId}::uuid, ${draft.sourceMessageId}::uuid, ${draft.id}::uuid, ${actorUserId}::uuid
       ) RETURNING id::text
@@ -291,7 +293,7 @@ export async function updateWorkStatus(actorUserId: string, workItemId: string, 
   await requireManageAccess(actorUserId, workItemId);
   await db.transaction(async (tx) => {
     const currentResult = await tx.execute(sql`SELECT status::text AS status, recurrence_rule AS "recurrenceRule", scheduled_for AS "scheduledFor", due_at AS "dueAt", sla_due_at AS "slaDueAt" FROM work_items WHERE id = ${workItemId}::uuid FOR UPDATE`);
-    const current = rows<{ status: WorkStatus; recurrenceRule: RecurrenceRule | null; scheduledFor: Date | null; dueAt: Date | null; slaDueAt: Date | null }>(currentResult)[0];
+    const current = rows<{ status: WorkStatus; recurrenceRule: RecurrenceRule | null; scheduledFor: Date | string | null; dueAt: Date | string | null; slaDueAt: Date | string | null }>(currentResult)[0];
     if (!current) throw new Error("Work item is unavailable");
     assertTransition(current.status, nextStatus);
     if (["IN_PROGRESS", "DONE"].includes(nextStatus)) {
@@ -348,7 +350,7 @@ export async function updateRoutingProfile(userId: string, input: { timezone?: s
   const maxActiveWork = Math.min(Math.max(Math.trunc(input.maxActiveWork ?? 20), 1), 200);
   await db.execute(sql`
     INSERT INTO work_routing_profiles (user_id, timezone, languages, available, max_active_work, updated_at)
-    VALUES (${userId}::uuid, ${timezone}, ${languages}::text[], ${input.available ?? true}, ${maxActiveWork}, now())
+    VALUES (${userId}::uuid, ${timezone}, string_to_array(${languages.join(",")}, ','), ${input.available ?? true}, ${maxActiveWork}, now())
     ON CONFLICT (user_id) DO UPDATE SET timezone = EXCLUDED.timezone, languages = EXCLUDED.languages, available = EXCLUDED.available, max_active_work = EXCLUDED.max_active_work, updated_at = now()
   `);
 }
@@ -371,7 +373,7 @@ export async function listWorkHistory(userId: string, workItemId: string): Promi
       FROM work_history h LEFT JOIN users u ON u.id = h.actor_user_id
      WHERE h.work_item_id = ${workItemId}::uuid ORDER BY h.created_at DESC
   `);
-  return rows<WorkHistoryEntry>(result);
+  return rows<WorkHistoryEntry>(result).map((entry) => ({ ...entry, createdAt: toDate(entry.createdAt)! }));
 }
 
 export async function getMyWorkAttentionCount(userId: string): Promise<number> {
@@ -445,7 +447,7 @@ async function appendHistoryTx(tx: any, workItemId: string, eventType: string, a
   await tx.execute(sql`INSERT INTO work_history (work_item_id, event_type, actor_user_id, metadata) VALUES (${workItemId}::uuid, ${eventType}, ${actorUserId}::uuid, CAST(${JSON.stringify(metadata)} AS jsonb))`);
 }
 
-async function createNextRecurrenceTx(tx: any, completedId: string, actorUserId: string, current: { recurrenceRule: RecurrenceRule | null; scheduledFor: Date | null; dueAt: Date | null; slaDueAt: Date | null }): Promise<void> {
+async function createNextRecurrenceTx(tx: any, completedId: string, actorUserId: string, current: { recurrenceRule: RecurrenceRule | null; scheduledFor: Date | string | null; dueAt: Date | string | null; slaDueAt: Date | string | null }): Promise<void> {
   if (!current.recurrenceRule) return;
   const interval = current.recurrenceRule === "DAILY" ? "1 day" : current.recurrenceRule === "WEEKLY" ? "7 days" : "1 month";
   const inserted = await tx.execute(sql`
@@ -501,5 +503,23 @@ function cleanText(value: string, min: number, max: number, label: string): stri
 function cleanOptional(value: string | undefined, max: number): string { const clean = (value ?? "").trim(); if (clean.length > max) throw new Error(`Text is too long (max ${max})`); return clean; }
 function normalizeLanguage(value: string | null | undefined): string | null { const clean = value?.trim().toLowerCase(); if (!clean) return null; if (!/^[a-z]{2,8}(-[a-z0-9]{2,8})?$/.test(clean)) throw new Error("Language must be a short language code such as en or sw"); return clean; }
 function normalizeTimezone(value: string | null | undefined): string | null { const clean = value?.trim(); if (!clean) return null; if (clean.length > 80 || !/^[A-Za-z0-9_+\-/]+$/.test(clean)) throw new Error("Timezone is invalid"); return clean; }
-function normalizeWorkItem(item: WorkItem): WorkItem { return { ...item, collaboratorCount: Number(item.collaboratorCount), blockedByCount: Number(item.blockedByCount) }; }
+function normalizeWorkItem(item: WorkItem): WorkItem {
+  return {
+    ...item,
+    dueAt: toDate(item.dueAt),
+    slaDueAt: toDate(item.slaDueAt),
+    scheduledFor: toDate(item.scheduledFor),
+    createdAt: toDate(item.createdAt)!,
+    updatedAt: toDate(item.updatedAt)!,
+    collaboratorCount: Number(item.collaboratorCount),
+    blockedByCount: Number(item.blockedByCount),
+  };
+}
+function toDate(value: Date | string | null | undefined): Date | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.valueOf())) throw new Error("Invalid timestamp returned from work persistence");
+  return parsed;
+}
 function rows<T = Record<string, unknown>>(result: unknown): T[] { return ((result as unknown as { rows?: T[] }).rows ?? []); }
