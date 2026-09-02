@@ -25,13 +25,17 @@ let bob = "";
 let charlie = "";
 const createdConversations: string[] = [];
 
+function resultRows<T>(result: unknown): T[] {
+  return ((result as unknown as { rows?: T[] }).rows ?? []);
+}
+
 async function createStaff(name: string): Promise<string> {
   const result = await db.execute(sql`
     INSERT INTO users (email, password_hash, name, role, active)
     VALUES (${`conversation-${run}-${name.toLowerCase()}@example.test`}, 'not-used-in-service-test', ${name}, 'STRATEGIST', true)
     RETURNING id::text
   `);
-  const id = ((result as { rows?: Array<{ id: string }> }).rows ?? [])[0]?.id;
+  const id = resultRows<{ id: string }>(result)[0]?.id;
   if (!id) throw new Error("test staff creation failed");
   return id;
 }
@@ -147,7 +151,7 @@ describe("staff conversations: privacy and collaboration", () => {
       SELECT status FROM conversation_action_drafts
        WHERE conversation_id = ${conversationId}::uuid AND source_message_id = ${messageId}::uuid
     `);
-    const status = ((raw as { rows?: Array<{ status: string }> }).rows ?? [])[0]?.status;
+    const status = resultRows<{ status: string }>(raw)[0]?.status;
     expect(status).toBe("DRAFT");
   });
 
