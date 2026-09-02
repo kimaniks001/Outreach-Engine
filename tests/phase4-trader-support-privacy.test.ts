@@ -3,7 +3,12 @@ import { sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { getOrCreateTraderConversation, openSupportCase, recordTraderMessage } from "@/lib/trader-support/support-engine";
-import { listVisibleConversationMessages, listVisibleSupportCases, listVisibleSupportConversations } from "@/lib/trader-support/support-visibility";
+import {
+  listVisibleConversationMessages,
+  listVisibleSupportCases,
+  listVisibleSupportConversations,
+  visibleSupportContextTarget,
+} from "@/lib/trader-support/support-visibility";
 
 const run = randomUUID().slice(0, 8);
 const users: string[] = [];
@@ -30,7 +35,8 @@ describe("Phase 4 trader support privacy", () => {
     const owner = await staff("owner", "OWNER");
     const assignee = await staff("assignee");
     const outsider = await staff("outsider");
-    const conversationId = await getOrCreateTraderConversation({ actorUserId: assignee, securepayIdentityRef: `privacy-${run}` });
+    const traderRef = `privacy-${run}`;
+    const conversationId = await getOrCreateTraderConversation({ actorUserId: assignee, securepayIdentityRef: traderRef });
     conversations.push(conversationId);
     await recordTraderMessage(conversationId, "Please help with this private support question.");
     const caseId = await openSupportCase({ actorUserId: assignee, conversationId, subject: `Private support ${run}`, ownerUserId: assignee });
@@ -43,5 +49,9 @@ describe("Phase 4 trader support privacy", () => {
     expect((await listVisibleSupportConversations(outsider)).some((item) => item.id === conversationId)).toBe(false);
     await expect(listVisibleConversationMessages(outsider, conversationId)).rejects.toThrow("unavailable");
     expect((await listVisibleConversationMessages(owner, conversationId)).length).toBe(1);
+
+    await expect(visibleSupportContextTarget(outsider, caseId)).rejects.toThrow("unavailable");
+    expect(await visibleSupportContextTarget(assignee, caseId)).toEqual({ caseId, conversationId, securepayIdentityRef: traderRef });
+    expect(await visibleSupportContextTarget(owner, caseId)).toEqual({ caseId, conversationId, securepayIdentityRef: traderRef });
   });
 });
