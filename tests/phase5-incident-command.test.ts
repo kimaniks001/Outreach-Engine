@@ -17,6 +17,7 @@ import {
   updateIncidentImpact,
 } from "@/lib/operations/incident-engine";
 import { getOrCreateTraderConversation, openSupportCase } from "@/lib/trader-support/support-engine";
+import { assignWorkOwner, updateWorkStatus } from "@/lib/work/work-engine";
 
 const run = randomUUID().slice(0, 8);
 let owner = "";
@@ -109,6 +110,27 @@ describe("True North Phase 5 incident command", () => {
     await db.execute(sql`DELETE FROM work_items WHERE id=${blocker.id}::uuid`);
     await transitionIncident({ actorUserId: commander, incidentId: id, state: "RESOLVED", resolutionSummary: "Mitigation complete.", rootCauseSummary: "Operational dependency was corrected." });
     expect((await getIncident(commander, id)).state).toBe("RESOLVED");
+  });
+
+  it("keeps incident state and commander authoritative over the linked generic Work item", async () => {
+    const id = await openIncident({ actorUserId: commander, title: `Governed work ${run}`, severity: "SEV3", affectedService: "agreements" });
+    incidentIds.push(id);
+    const incident = await getIncident(commander, id);
+    await expect(updateWorkStatus(commander, incident.workItemId, "DONE")).rejects.toThrow("Incident Command");
+    await expect(assignWorkOwner(commander, incident.workItemId, responder)).rejects.toThrow("Incident Command");
+    expect((await getIncident(commander, id)).state).toBe("DETECTED");
+    const work = rows<{ status: string; owner: string }>(await db.execute(sql`SELECT status::text AS status, owner_user_id::text AS owner FROM work_items WHERE id=${incident.workItemId}::uuid`))[0];
+    expect(work).toEqual({ status: "IN_PROGRESS", owner: commander });
+  });
+
+  it("clears a stale resolution time when an incident is reopened", async () => {
+    const id = await openIncident({ actorUserId: commander, title: `Reopened incident ${run}`, severity: "SEV3", affectedService: "settlement" });
+    incidentIds.push(id);
+    await transitionIncident({ actorUserId: commander, incidentId: id, state: "INVESTIGATING" });
+    await transitionIncident({ actorUserId: commander, incidentId: id, state: "RESOLVED", resolutionSummary: "Initial mitigation appeared complete." });
+    expect((await getIncident(commander, id)).resolvedAt).not.toBeNull();
+    await transitionIncident({ actorUserId: commander, incidentId: id, state: "INVESTIGATING", note: "The issue recurred." });
+    expect((await getIncident(commander, id)).resolvedAt).toBeNull();
   });
 
   it("treats affected trader count as an operator estimate and tracks changes in chronology", async () => {
