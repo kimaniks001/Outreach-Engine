@@ -1,14 +1,37 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/rbac/guard";
-import { listVisibleConversationMessages, listVisibleSupportCases } from "@/lib/trader-support/support-visibility";
+import { resolveSupportContextConnection } from "@/lib/trader-support/support-context-connection";
+import type { SecurePaySupportContext } from "@/lib/trader-support/securepay-support-context-client";
+import {
+  listVisibleConversationMessages,
+  listVisibleSupportCases,
+  visibleSupportContextTarget,
+} from "@/lib/trader-support/support-visibility";
 
 export default async function TraderCaseRoomPage({ params }: { params: Promise<{ caseId: string }> }) {
   const user = await requireUser();
   const { caseId } = await params;
   const supportCase = (await listVisibleSupportCases(user.id)).find((item) => item.id === caseId);
   if (!supportCase) notFound();
-  const messages = await listVisibleConversationMessages(user.id, supportCase.conversationId);
+
+  const [messages, target, connection] = await Promise.all([
+    listVisibleConversationMessages(user.id, supportCase.conversationId),
+    visibleSupportContextTarget(user.id, caseId),
+    resolveSupportContextConnection(),
+  ]);
+
+  let securePayContext: SecurePaySupportContext | null = null;
+  let contextState: "READY" | "UNAVAILABLE" | "NOT_AUTHORISED" = "UNAVAILABLE";
+  if (connection.status === "CONNECTED") {
+    try {
+      securePayContext = await connection.client.read(target.securepayIdentityRef, caseId);
+      contextState = "READY";
+    } catch (error) {
+      const status = typeof error === "object" && error !== null && "status" in error ? Number(error.status) : 0;
+      contextState = status === 401 || status === 403 ? "NOT_AUTHORISED" : "UNAVAILABLE";
+    }
+  }
 
   return (
     <div className="mx-auto max-w-6xl outreach-rise">
@@ -54,6 +77,7 @@ export default async function TraderCaseRoomPage({ params }: { params: Promise<{
         </section>
 
         <aside className="space-y-4">
+          <SupportContextCard context={securePayContext} state={contextState} />
           <div className="rounded-3xl border border-surface-border bg-surface-raised p-5 shadow-sm">
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-faint">Next action</p>
             <p className="mt-2 text-sm leading-6 text-ink">{supportCase.nextAction || "Agree the next action."}</p>
@@ -68,6 +92,46 @@ export default async function TraderCaseRoomPage({ params }: { params: Promise<{
       </div>
     </div>
   );
+}
+
+function SupportContextCard({ context, state }: { context: SecurePaySupportContext | null; state: "READY" | "UNAVAILABLE" | "NOT_AUTHORISED" }) {
+  if (!context) {
+    return (
+      <div className="rounded-3xl border border-surface-border bg-surface-raised p-5 shadow-sm">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand">SecurePay context</p>
+        <p className="mt-2 text-sm font-semibold text-ink">{state === "NOT_AUTHORISED" ? "Private context stays closed" : "Context is temporarily unavailable"}</p>
+        <p className="mt-2 text-xs leading-5 text-ink-muted">{state === "NOT_AUTHORISED" ? "This signed-in SecurePay identity does not have the case-limited support read authority. Outreach will not widen access or try another trader lookup." : "The case can continue with human support, but authoritative product or money answers must wait for SecurePay context or approved guidance."}</p>
+      </div>
+    );
+  }
+
+  const attention = context.agreements.filter((agreement) => agreement.attentionRequired);
+  const next = context.agreements.flatMap((agreement) => agreement.nextActions.map((action) => ({ ...action, agreement: agreement.publicReference }))).slice(0, 3);
+
+  return (
+    <div className="rounded-3xl border border-brand/15 bg-[#f6f3ea] p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand">SecurePay truth · minimum view</p>
+          <p className="mt-2 font-display text-2xl text-ink">{context.traderDisplayName || "Trader"}</p>
+        </div>
+        <span className="rounded-full bg-brand/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-brand">{context.identityStatus}</span>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <Metric label="Relevant agreements" value={String(context.agreements.length)} />
+        <Metric label="Need attention" value={String(attention.length)} />
+      </div>
+      <div className="mt-4 border-t border-brand/10 pt-4">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-ink-faint">Authoritative next actions</p>
+        {next.length === 0 ? <p className="mt-2 text-xs leading-5 text-ink-muted">No participant next action is currently projected.</p> : <div className="mt-2 space-y-2">{next.map((action, index) => <div key={`${action.agreement}-${action.actionCode}-${index}`} className="rounded-2xl bg-white/70 px-3 py-2"><p className="text-xs font-semibold text-ink">{action.reason}</p><p className="mt-1 text-[10px] text-ink-faint">{action.agreement}{action.deadline ? ` · by ${new Date(action.deadline).toLocaleString()}` : ""}</p></div>)}</div>}
+      </div>
+      <p className="mt-4 text-[10px] leading-4 text-ink-faint">Case-bound read · no contacts, documents, balances, ledger or unrelated account history.</p>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-2xl bg-white/70 p-3"><p className="text-[10px] uppercase tracking-[0.12em] text-ink-faint">{label}</p><p className="mt-1 text-xl font-semibold text-ink">{value}</p></div>;
 }
 
 function RoomRow({ label, value }: { label: string; value: string }) {
