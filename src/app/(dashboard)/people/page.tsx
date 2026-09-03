@@ -1,5 +1,302 @@
 import { requireUser } from "@/lib/rbac/guard";
 import { listWorkQueues } from "@/lib/work/work-engine";
-import { listDutyRotations,listTeamPresence,listUpcomingCoverage } from "@/lib/people/remote-team";
-import { createRotationAction,scheduleCoverageAction,updatePresenceAction } from "./actions";
-export default async function PeoplePage(){const user=await requireUser();const [people,coverage,rotations,queues]=await Promise.all([listTeamPresence(user.id),listUpcomingCoverage(user.id),listDutyRotations(user.id),listWorkQueues()]);const me=people.find(x=>x.userId===user.id);const owner=user.role==="OWNER";return <div className="mx-auto max-w-7xl space-y-7 outreach-rise"><section className="rounded-[30px] bg-brand px-6 py-8 text-white shadow-float sm:px-9"><p className="text-[10px] font-semibold uppercase tracking-[.2em] text-white/60">People · Remote operations</p><h1 className="mt-3 max-w-3xl font-display text-4xl sm:text-5xl">Know who is here, who is covering, and what crosses the day.</h1><p className="mt-4 max-w-2xl text-sm leading-6 text-white/70">Presence guides coordination; Work ownership and immutable handovers preserve accountability across homes, countries and timezones.</p></section><div className="grid gap-6 xl:grid-cols-[1.2fr_.8fr]"><section className="rounded-3xl border border-surface-border bg-surface-raised p-6"><h2 className="font-display text-3xl text-ink">Team now</h2><div className="mt-5 grid gap-3 sm:grid-cols-2">{people.map(p=><div key={p.userId} className="rounded-2xl bg-surface-soft p-4"><div className="flex items-center justify-between"><p className="font-semibold text-ink">{p.name}</p><span className="rounded-full bg-brand/10 px-2 py-1 text-[10px] font-semibold text-brand">{p.presenceStatus}</span></div><p className="mt-1 text-xs text-ink-muted">{p.role} · {p.timezone} · {p.activeWork} active</p><p className="mt-2 text-xs text-ink-faint">{p.localStart.slice(0,5)}–{p.localEnd.slice(0,5)} · {p.languages.join(", ")}</p>{p.presenceNote?<p className="mt-2 text-xs text-ink-muted">{p.presenceNote}</p>:null}</div>)}</div></section><section className="rounded-3xl border border-surface-border bg-surface-raised p-6"><h2 className="font-display text-2xl text-ink">My working signal</h2><form action={updatePresenceAction} className="mt-4 space-y-3"><div className="grid grid-cols-2 gap-2"><select name="presenceStatus" defaultValue={me?.presenceStatus??"AVAILABLE"} className="rounded-xl border p-2 text-sm"><option>AVAILABLE</option><option>FOCUSED</option><option>AWAY</option><option>OFFLINE</option></select><input name="timezone" defaultValue={me?.timezone??"UTC"} className="rounded-xl border p-2 text-sm" /></div><input name="languages" defaultValue={me?.languages.join(",")??"en"} className="w-full rounded-xl border p-2 text-sm"/><input name="presenceNote" maxLength={240} defaultValue={me?.presenceNote} placeholder="Short context for the team" className="w-full rounded-xl border p-2 text-sm"/><div className="grid grid-cols-2 gap-2"><input type="time" name="localStart" defaultValue={me?.localStart.slice(0,5)??"08:00"} className="rounded-xl border p-2 text-sm"/><input type="time" name="localEnd" defaultValue={me?.localEnd.slice(0,5)??"17:00"} className="rounded-xl border p-2 text-sm"/></div><div className="flex flex-wrap gap-2">{[0,1,2,3,4,5,6].map(d=><label key={d} className="text-xs"><input type="checkbox" name="workingDays" value={d} defaultChecked={me?.workingDays.includes(d)}/>{["Su","Mo","Tu","We","Th","Fr","Sa"][d]}</label>)}</div><label className="block text-xs"><input type="checkbox" name="available" defaultChecked={me?.available}/> Available for routing</label><button className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white">Update presence</button></form></section></div><section className="rounded-3xl border border-surface-border bg-surface-raised p-6"><h2 className="font-display text-3xl text-ink">Coverage across timezones</h2>{coverage.length?<div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{coverage.map(s=><div key={s.id} className="rounded-2xl bg-surface-soft p-4"><p className="font-semibold text-ink">{s.queueName}</p><p className="mt-1 text-sm text-ink-muted">{s.userName}</p><p className="mt-2 text-xs text-ink-faint">{s.startsAt.toLocaleString()} → {s.endsAt.toLocaleString()}</p><p className="mt-2 text-xs text-ink-muted">{s.responsibility||"Queue coverage"}</p></div>)}</div>:<p className="mt-3 text-sm text-ink-muted">No upcoming coverage is scheduled.</p>}{owner?<form action={scheduleCoverageAction} className="mt-5 grid gap-2 md:grid-cols-6"><select name="userId" className="rounded-xl border p-2 text-sm">{people.map(p=><option key={p.userId} value={p.userId}>{p.name}</option>)}</select><select name="queueKey" className="rounded-xl border p-2 text-sm">{queues.map(q=><option key={q.id} value={q.queueKey}>{q.name}</option>)}</select><input type="datetime-local" name="startsAt" required className="rounded-xl border p-2 text-sm"/><input type="datetime-local" name="endsAt" required className="rounded-xl border p-2 text-sm"/><input name="responsibility" placeholder="Coverage focus" className="rounded-xl border p-2 text-sm"/><button className="rounded-xl bg-brand px-3 text-sm font-semibold text-white">Schedule</button></form>:null}</section><section className="rounded-3xl border border-surface-border bg-surface-raised p-6"><h2 className="font-display text-3xl text-ink">On-duty rotations</h2><div className="mt-4 space-y-3">{rotations.map(r=><div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface-soft p-4"><div><p className="font-semibold text-ink">{r.name}</p><p className="text-xs text-ink-muted">{r.queueKey} · {r.timezone} · every {r.cadenceDays} days</p></div><p className="text-sm text-ink">{r.primaryName}{r.backupName?` · backup ${r.backupName}`:""}<br/><span className="text-xs text-ink-faint">next {r.nextHandoffAt.toLocaleString()}</span></p></div>)}</div>{owner?<form action={createRotationAction} className="mt-5 grid gap-2 md:grid-cols-4"><input name="name" required placeholder="Rotation name" className="rounded-xl border p-2 text-sm"/><select name="queueKey" className="rounded-xl border p-2 text-sm">{queues.map(q=><option key={q.id} value={q.queueKey}>{q.name}</option>)}</select><select name="primaryUserId" className="rounded-xl border p-2 text-sm">{people.map(p=><option key={p.userId} value={p.userId}>{p.name}</option>)}</select><select name="backupUserId" defaultValue="" className="rounded-xl border p-2 text-sm"><option value="">No backup</option>{people.map(p=><option key={p.userId} value={p.userId}>{p.name}</option>)}</select><input name="timezone" defaultValue="UTC" className="rounded-xl border p-2 text-sm"/><input type="number" name="cadenceDays" min="1" max="90" defaultValue="7" className="rounded-xl border p-2 text-sm"/><input type="datetime-local" name="nextHandoffAt" required className="rounded-xl border p-2 text-sm"/><button className="rounded-xl bg-brand px-3 text-sm font-semibold text-white">Create rotation</button></form>:null}</section></div>}
+import {
+  listDutyRotations,
+  listTeamPresence,
+  listUpcomingCoverage,
+} from "@/lib/people/remote-team";
+import {
+  createRotationAction,
+  scheduleCoverageAction,
+  updatePresenceAction,
+} from "./actions";
+export default async function PeoplePage() {
+  const user = await requireUser();
+  const [people, coverage, rotations, queues] = await Promise.all([
+    listTeamPresence(user.id),
+    listUpcomingCoverage(user.id),
+    listDutyRotations(user.id),
+    listWorkQueues(),
+  ]);
+  const me = people.find((x) => x.userId === user.id);
+  const owner = user.role === "OWNER";
+  return (
+    <div className="mx-auto max-w-7xl space-y-7 outreach-rise">
+      <section className="rounded-[30px] bg-brand px-6 py-8 text-white shadow-float sm:px-9">
+        <p className="text-[10px] font-semibold uppercase tracking-[.2em] text-white/60">
+          People · Remote operations
+        </p>
+        <h1 className="mt-3 max-w-3xl font-display text-4xl sm:text-5xl">
+          Know who is here, who is covering, and what crosses the day.
+        </h1>
+        <p className="mt-4 max-w-2xl text-sm leading-6 text-white/70">
+          Presence guides coordination; Work ownership and immutable handovers
+          preserve accountability across homes, countries and timezones.
+        </p>
+      </section>
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_.8fr]">
+        <section className="rounded-3xl border border-surface-border bg-surface-raised p-6">
+          <h2 className="font-display text-3xl text-ink">Team now</h2>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            {people.map((p) => (
+              <div key={p.userId} className="rounded-2xl bg-surface-soft p-4">
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold text-ink">{p.name}</p>
+                  <span className="rounded-full bg-brand/10 px-2 py-1 text-[10px] font-semibold text-brand">
+                    {p.presenceStatus}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-ink-muted">
+                  {p.role} · {p.timezone} · {p.activeWork} active
+                </p>
+                <p className="mt-2 text-xs text-ink-faint">
+                  {p.localStart.slice(0, 5)}–{p.localEnd.slice(0, 5)} ·{" "}
+                  {p.languages.join(", ")}
+                </p>
+                {p.presenceNote ? (
+                  <p className="mt-2 text-xs text-ink-muted">
+                    {p.presenceNote}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="rounded-3xl border border-surface-border bg-surface-raised p-6">
+          <h2 className="font-display text-2xl text-ink">My working signal</h2>
+          <form action={updatePresenceAction} className="mt-4 space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                name="presenceStatus"
+                defaultValue={me?.presenceStatus ?? "AVAILABLE"}
+                className="rounded-xl border p-2 text-sm"
+              >
+                <option>AVAILABLE</option>
+                <option>FOCUSED</option>
+                <option>AWAY</option>
+                <option>OFFLINE</option>
+              </select>
+              <input
+                name="timezone"
+                defaultValue={me?.timezone ?? "UTC"}
+                className="rounded-xl border p-2 text-sm"
+              />
+            </div>
+            <input
+              name="languages"
+              defaultValue={me?.languages.join(",") ?? "en"}
+              className="w-full rounded-xl border p-2 text-sm"
+            />
+            <input
+              name="presenceNote"
+              maxLength={240}
+              defaultValue={me?.presenceNote}
+              placeholder="Short context for the team"
+              className="w-full rounded-xl border p-2 text-sm"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="time"
+                name="localStart"
+                defaultValue={me?.localStart.slice(0, 5) ?? "08:00"}
+                className="rounded-xl border p-2 text-sm"
+              />
+              <input
+                type="time"
+                name="localEnd"
+                defaultValue={me?.localEnd.slice(0, 5) ?? "17:00"}
+                className="rounded-xl border p-2 text-sm"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {[0, 1, 2, 3, 4, 5, 6].map((d) => (
+                <label key={d} className="text-xs">
+                  <input
+                    type="checkbox"
+                    name="workingDays"
+                    value={d}
+                    defaultChecked={me?.workingDays.includes(d)}
+                  />
+                  {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"][d]}
+                </label>
+              ))}
+            </div>
+            <label className="block text-xs">
+              <input
+                type="checkbox"
+                name="available"
+                defaultChecked={me?.available}
+              />{" "}
+              Available for routing
+            </label>
+            <button className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white">
+              Update presence
+            </button>
+          </form>
+        </section>
+      </div>
+      <section className="rounded-3xl border border-surface-border bg-surface-raised p-6">
+        <h2 className="font-display text-3xl text-ink">
+          Coverage across timezones
+        </h2>
+        {coverage.length ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {coverage.map((s) => (
+              <div key={s.id} className="rounded-2xl bg-surface-soft p-4">
+                <p className="font-semibold text-ink">{s.queueName}</p>
+                <p className="mt-1 text-sm text-ink-muted">{s.userName}</p>
+                <p className="mt-2 text-xs text-ink-faint">
+                  {s.startsAt.toLocaleString()} → {s.endsAt.toLocaleString()}
+                </p>
+                <p className="mt-2 text-xs text-ink-muted">
+                  {s.responsibility || "Queue coverage"}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-ink-muted">
+            No upcoming coverage is scheduled.
+          </p>
+        )}
+        {owner ? (
+          <form
+            action={scheduleCoverageAction}
+            className="mt-5 grid gap-2 md:grid-cols-6"
+          >
+            <select name="userId" className="rounded-xl border p-2 text-sm">
+              {people.map((p) => (
+                <option key={p.userId} value={p.userId}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <select name="queueKey" className="rounded-xl border p-2 text-sm">
+              {queues.map((q) => (
+                <option key={q.id} value={q.queueKey}>
+                  {q.name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="datetime-local"
+              name="startsAt"
+              required
+              className="rounded-xl border p-2 text-sm"
+            />
+              <input
+                type="datetime-local"
+                name="endsAt"
+                required
+                className="rounded-xl border p-2 text-sm"
+              />
+              <input
+                name="coverageTimezone"
+                defaultValue={me?.timezone ?? "UTC"}
+                aria-label="Coverage timezone"
+                className="rounded-xl border p-2 text-sm"
+              />
+            <input
+              name="responsibility"
+              placeholder="Coverage focus"
+              className="rounded-xl border p-2 text-sm"
+            />
+            <button className="rounded-xl bg-brand px-3 text-sm font-semibold text-white">
+              Schedule
+            </button>
+          </form>
+        ) : null}
+      </section>
+      <section className="rounded-3xl border border-surface-border bg-surface-raised p-6">
+        <h2 className="font-display text-3xl text-ink">On-duty rotations</h2>
+        <div className="mt-4 space-y-3">
+          {rotations.map((r) => (
+            <div
+              key={r.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface-soft p-4"
+            >
+              <div>
+                <p className="font-semibold text-ink">{r.name}</p>
+                <p className="text-xs text-ink-muted">
+                  {r.queueKey} · {r.timezone} · every {r.cadenceDays} days
+                </p>
+              </div>
+              <p className="text-sm text-ink">
+                {r.primaryName}
+                {r.backupName ? ` · backup ${r.backupName}` : ""}
+                <br />
+                <span className="text-xs text-ink-faint">
+                  next {r.nextHandoffAt.toLocaleString()}
+                </span>
+              </p>
+            </div>
+          ))}
+        </div>
+        {owner ? (
+          <form
+            action={createRotationAction}
+            className="mt-5 grid gap-2 md:grid-cols-4"
+          >
+            <input
+              name="name"
+              required
+              placeholder="Rotation name"
+              className="rounded-xl border p-2 text-sm"
+            />
+            <select name="queueKey" className="rounded-xl border p-2 text-sm">
+              {queues.map((q) => (
+                <option key={q.id} value={q.queueKey}>
+                  {q.name}
+                </option>
+              ))}
+            </select>
+            <select
+              name="primaryUserId"
+              className="rounded-xl border p-2 text-sm"
+            >
+              {people.map((p) => (
+                <option key={p.userId} value={p.userId}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <select
+              name="backupUserId"
+              defaultValue=""
+              className="rounded-xl border p-2 text-sm"
+            >
+              <option value="">No backup</option>
+              {people.map((p) => (
+                <option key={p.userId} value={p.userId}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <input
+              name="timezone"
+              defaultValue="UTC"
+              className="rounded-xl border p-2 text-sm"
+            />
+            <input
+              type="number"
+              name="cadenceDays"
+              min="1"
+              max="90"
+              defaultValue="7"
+              className="rounded-xl border p-2 text-sm"
+            />
+            <input
+              type="datetime-local"
+              name="nextHandoffAt"
+              required
+              className="rounded-xl border p-2 text-sm"
+            />
+            <button className="rounded-xl bg-brand px-3 text-sm font-semibold text-white">
+              Create rotation
+            </button>
+          </form>
+        ) : null}
+      </section>
+    </div>
+  );
+}
