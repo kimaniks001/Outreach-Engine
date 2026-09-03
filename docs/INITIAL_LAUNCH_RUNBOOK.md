@@ -1,8 +1,10 @@
 # Initial Launch Runbook
 
-Status: Post-roadmap — **NOT Phase 6**
+Status: Updated for True North Phase 10 production closure
 Companion to `docs/PRODUCTION_READINESS_REVIEW.md`
-Last updated: 2026-08-11
+Last updated: 2026-09-03
+
+The current launch classification and all ten Nerve Centre journey gates are recorded in `docs/TRUE_NORTH_PHASE_10_PRODUCTION_CLOSURE.md`. This runbook remains the operator procedure; a green repository does not mean production has already been activated.
 
 ## Part 1 — Production Bootstrap (once, before any real use)
 
