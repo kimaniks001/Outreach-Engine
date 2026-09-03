@@ -12,6 +12,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "verify:production": "tsx scripts/verify-production-closure.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
