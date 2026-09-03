@@ -16,6 +16,7 @@ export default async function GrowthPage() {
     ["GROWTH_DIRECTOR", { label: "Growth Director", href: "/growth-director", description: "Evidence-grounded recommendations: what happened, what it means and what to do next." }],
   ];
   const links = candidates.filter(([section]) => canAccessSection(user.role, section)).map(([, link]) => link);
+  if (["OWNER","GROWTH_DIRECTOR","STRATEGIST","ANALYST"].includes(user.role)) links.unshift({ label: "Market learning loop", href: "/growth/network-loop", description: "Connect trader friction to evidence, conversation and owned work without collapsing backend authority boundaries." });
   if (links.length === 0) links.push({ label: "Today", href: "/today", description: "Your role does not currently have a Growth room. Today remains your personal operating view.", state: "foundation" });
 
   return (
