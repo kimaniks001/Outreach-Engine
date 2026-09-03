@@ -70,6 +70,7 @@ on:
       - "tests/phase3-adapter.test.ts"
       - "tests/phase3-db.test.ts"
       - "tests/phase5-*.test.ts"
+      - "tests/phase6-*.test.ts"
       - "tests/brand-guardian.test.ts"
       - "tests/securepay-market-auth.test.ts"
       - ".github/workflows/community-live-validation.yml"

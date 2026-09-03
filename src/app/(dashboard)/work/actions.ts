@@ -18,6 +18,7 @@ import {
   type WorkStatus,
   type WorkType,
 } from "@/lib/work/work-engine";
+import { handoverWork } from "@/lib/people/remote-team";
 
 const WORK_TYPES = new Set<WorkType>(["TASK", "CASE", "INCIDENT", "FOLLOW_UP", "APPROVAL", "KNOWLEDGE", "SCHEDULE", "PROJECT"]);
 const PRIORITIES = new Set<WorkPriority>(["LOW", "NORMAL", "HIGH", "URGENT", "CRITICAL"]);
@@ -102,6 +103,7 @@ export async function addDependencyAction(formData: FormData) {
   await addDependency(user.id, id, required(formData, "dependsOnWorkItemId"));
   refreshWork(id);
 }
+export async function handoverWorkAction(formData:FormData){const user=await requireUser();const id=required(formData,"workItemId");await handoverWork({actorUserId:user.id,workItemId:id,toUserId:required(formData,"toUserId"),summary:required(formData,"summary"),nextAction:required(formData,"nextAction")});refreshWork(id);revalidatePath("/people");}
 
 export async function updateMyRoutingProfileAction(formData: FormData) {
   const user = await requireUser();
