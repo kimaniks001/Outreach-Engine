@@ -271,13 +271,14 @@ export async function routeWorkItem(actorUserId: string, workItemId: string): Pr
              (SELECT count(*)::int FROM work_items active WHERE active.owner_user_id = u.id AND active.status NOT IN ('DONE','CANCELLED')) AS "activeWork"
         FROM users u
         JOIN work_routing_profiles rp ON rp.user_id = u.id
+        JOIN pg_timezone_names valid_timezone ON valid_timezone.name = rp.timezone
        WHERE u.active = TRUE AND rp.available = TRUE AND rp.presence_status IN ('AVAILABLE','FOCUSED')
          AND (${role}::role IS NULL OR u.role = ${role}::role)
          AND (${item.requiredLanguage}::text IS NULL OR rp.languages @> ARRAY[${item.requiredLanguage}]::text[])
        ORDER BY
          CASE WHEN EXISTS (SELECT 1 FROM team_coverage_shifts shift WHERE shift.user_id=u.id AND shift.queue_id=${item.queueId}::uuid AND shift.status IN ('SCHEDULED','ACTIVE') AND now() BETWEEN shift.starts_at AND shift.ends_at) THEN 0 ELSE 1 END,
-         CASE WHEN extract(dow FROM now() AT TIME ZONE rp.timezone)::int = ANY(rp.working_days)
-                    AND (now() AT TIME ZONE rp.timezone)::time BETWEEN rp.local_start AND rp.local_end THEN 0 ELSE 1 END,
+         CASE WHEN extract(dow FROM now() AT TIME ZONE valid_timezone.name)::int = ANY(rp.working_days)
+                    AND (now() AT TIME ZONE valid_timezone.name)::time BETWEEN rp.local_start AND rp.local_end THEN 0 ELSE 1 END,
          CASE WHEN ${item.preferredTimezone}::text IS NOT NULL AND rp.timezone = ${item.preferredTimezone} THEN 0 ELSE 1 END,
          (SELECT count(*) FROM work_items active WHERE active.owner_user_id = u.id AND active.status NOT IN ('DONE','CANCELLED')) ASC,
          u.name ASC
