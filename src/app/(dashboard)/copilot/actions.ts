@@ -1,0 +1,4 @@
+"use server";import {redirect} from "next/navigation";import {requireUser} from "@/lib/rbac/guard";import {generateBrief} from "@/lib/copilot/outreach-copilot";
+export async function askCopilotAction(f:FormData){const user=await requireUser();const q=value(f,"query");await generateBrief(user.id,user.role,q);redirect("/copilot?created=1");}
+export async function commandAction(f:FormData){const q=value(f,"command");if(!q)return;const lower=q.toLowerCase();if(/\b(conversation|message|chat)\b/.test(lower))redirect("/conversations");if(/\b(incident|operation|outage)\b/.test(lower))redirect("/operations");if(/\b(trader|case|support)\b/.test(lower))redirect("/traders");if(/\b(growth|campaign|market)\b/.test(lower))redirect("/growth");if(/\b(people|team|who)\b/.test(lower))redirect("/people");redirect(`/copilot?q=${encodeURIComponent(q)}`);}
+function value(f:FormData,k:string){const v=f.get(k);return typeof v==="string"?v.trim():"";}
