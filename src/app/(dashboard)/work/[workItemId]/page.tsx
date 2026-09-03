@@ -63,7 +63,17 @@ export default async function WorkDetailPage({ params }: { params: Promise<{ wor
           )}
         </section>
 
-        <aside className="space-y-4">
+        {handovers.length ? <section className="rounded-[26px] border border-surface-border bg-surface-raised p-5 shadow-sm sm:p-6 lg:col-start-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-brand">Handover context</p>
+          <h2 className="mt-1 font-display text-2xl text-ink">What the next owner needs</h2>
+          <div className="mt-4 space-y-3">{handovers.map((handover) => <article key={handover.id} className="rounded-2xl bg-surface p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-faint"><span>{handover.fromName} → {handover.toName}</span><time>{formatDate(handover.createdAt)}</time></div>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-ink-muted">{handover.summary}</p>
+            <p className="mt-3 text-sm font-medium text-ink"><span className="text-brand">Next:</span> {handover.nextAction}</p>
+          </article>)}</div>
+        </section> : null}
+
+        <aside className="space-y-4 lg:col-start-2 lg:row-start-1">
           {!terminal ? <section className="rounded-[24px] border border-surface-border bg-surface-raised p-5 shadow-sm">
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-brand">Move the work</p>
             <div className="mt-4 space-y-3">
