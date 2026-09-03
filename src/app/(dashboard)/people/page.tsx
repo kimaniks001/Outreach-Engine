@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireUser } from "@/lib/rbac/guard";
 import { listWorkQueues } from "@/lib/work/work-engine";
 import {
@@ -33,6 +34,7 @@ export default async function PeoplePage() {
           Presence guides coordination; Work ownership and immutable handovers
           preserve accountability across homes, countries and timezones.
         </p>
+        <Link href="/people/culture" className="mt-5 inline-flex rounded-full bg-white/12 px-4 py-2 text-sm font-semibold text-white">Open people &amp; culture →</Link>
       </section>
       <div className="grid gap-6 xl:grid-cols-[1.2fr_.8fr]">
         <section className="rounded-3xl border border-surface-border bg-surface-raised p-6">
