@@ -55,6 +55,9 @@ on:
       - "src/lib/rbac/**"
       - "src/lib/distribution/**"
       - "src/lib/audit/**"
+      - "scripts/verify-production-closure.ts"
+      - "docs/TRUE_NORTH_PHASE_10_PRODUCTION_CLOSURE.md"
+      - "next.config.mjs"
       - "src/middleware.ts"
       - "tailwind.config.ts"
       - "tests/community-*.test.ts"
@@ -74,6 +77,7 @@ on:
       - "tests/phase7-*.test.ts"
       - "tests/phase8-*.test.ts"
       - "tests/phase9-*.test.ts"
+      - "tests/phase10-*.test.ts"
       - "tests/brand-guardian.test.ts"
       - "tests/securepay-market-auth.test.ts"
       - ".github/workflows/community-live-validation.yml"
@@ -154,3 +158,6 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Production closure budgets
+        run: npm run verify:production
