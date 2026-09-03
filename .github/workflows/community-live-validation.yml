@@ -73,6 +73,7 @@ on:
       - "tests/phase6-*.test.ts"
       - "tests/phase7-*.test.ts"
       - "tests/phase8-*.test.ts"
+      - "tests/phase9-*.test.ts"
       - "tests/brand-guardian.test.ts"
       - "tests/securepay-market-auth.test.ts"
       - ".github/workflows/community-live-validation.yml"
