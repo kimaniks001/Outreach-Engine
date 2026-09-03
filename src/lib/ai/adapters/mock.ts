@@ -113,6 +113,16 @@ function buildGrowthRecommendationMockResponse(prompt: string): string {
   });
 }
 
+function buildCopilotMockResponse(prompt: string): string {
+  const context = prompt.includes("COPILOT_CONTEXT");
+  return JSON.stringify({
+    summary: context ? "[MOCK] Your authorised Outreach context was assembled successfully. This is a deterministic demonstration, not live model reasoning." : "[MOCK] Source synthesis requires a live approved model for substantive reasoning.",
+    priorities: ["Review the highest-priority grounded work item shown in the source list."],
+    patterns: ["No pattern is asserted by the mock provider; rely on the deterministic repeated-friction counts."],
+    suggestedActions: ["Open the cited source and make a human decision."],
+  });
+}
+
 function buildCreativeMockResponse(prompt: string): string {
   const name = extractLine(prompt, "CAMPAIGN_NAME") || "this campaign";
   const cta = extractLine(prompt, "CTA") || "Learn more";
@@ -160,6 +170,9 @@ export const mockAdapter: ProviderAdapter = {
   async execute(input: ProviderExecuteInput): Promise<ProviderExecuteOutput> {
     let text: string;
     switch (input.taskType) {
+      case "SOURCE_SYNTHESIS":
+        text = buildCopilotMockResponse(input.prompt);
+        break;
       case "BRAND_REVIEW":
         text = buildBrandReviewMockResponse();
         break;
