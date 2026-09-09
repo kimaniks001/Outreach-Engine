@@ -19,7 +19,8 @@ export type ApplyBindingResult =
   | { status: "APPLIED"; action: "BIND" | "REVOKE"; wokeMessages: number }
   | { status: "DUPLICATE"; action: "BIND" | "REVOKE"; wokeMessages: 0 }
   | { status: "STALE"; action: "BIND" | "REVOKE"; wokeMessages: 0; currentSequence: number }
-  | { status: "IDENTITY_MISMATCH"; action: "REVOKE"; wokeMessages: 0; currentSequence: number };
+  | { status: "IDENTITY_MISMATCH"; action: "REVOKE"; wokeMessages: 0; currentSequence: number }
+  | { status: "REBIND_REQUIRES_REVOKE"; action: "BIND"; wokeMessages: 0; currentSequence: number };
 
 export function parseWhatsAppIdentityBindingAssertion(payload: unknown): WhatsAppIdentityBindingAssertion {
   const parsed = assertionSchema.parse(payload);
@@ -99,6 +100,15 @@ export async function applyWhatsAppIdentityBindingAssertion(
     ) {
       await markAssertion(tx, normalized.assertionId, false, `IDENTITY_MISMATCH:${current.securepayIdentityRef}`);
       return { status: "IDENTITY_MISMATCH", action: "REVOKE", wokeMessages: 0, currentSequence } as const;
+    }
+
+    if (
+      normalized.action === "BIND" &&
+      current.securepayIdentityRef !== null &&
+      current.securepayIdentityRef !== normalized.securepayIdentityRef
+    ) {
+      await markAssertion(tx, normalized.assertionId, false, `REBIND_REQUIRES_REVOKE:${current.securepayIdentityRef}`);
+      return { status: "REBIND_REQUIRES_REVOKE", action: "BIND", wokeMessages: 0, currentSequence } as const;
     }
 
     if (normalized.action === "REVOKE") {
