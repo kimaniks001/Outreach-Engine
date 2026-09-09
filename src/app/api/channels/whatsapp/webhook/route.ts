@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { mapWithConcurrency } from "@/lib/whatsapp/bounded-map";
 import { ingestWhatsAppMessage } from "@/lib/whatsapp/intake";
 import { normalizeWhatsAppWebhook, verifyMetaWebhookSignature, verifyWebhookChallenge } from "@/lib/whatsapp/protocol";
 
 export const runtime = "nodejs";
+
+const WEBHOOK_PERSIST_CONCURRENCY = 8;
 
 export async function GET(req: NextRequest) {
   const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN?.trim() ?? "";
@@ -30,10 +33,11 @@ export async function POST(req: NextRequest) {
   }
 
   const messages = normalizeWhatsAppWebhook(payload);
-  const outcomes = [];
-  for (const message of messages) {
-    outcomes.push(await ingestWhatsAppMessage(message));
-  }
+  const outcomes = await mapWithConcurrency(
+    messages,
+    WEBHOOK_PERSIST_CONCURRENCY,
+    (message) => ingestWhatsAppMessage(message),
+  );
 
   // Meta retries on non-2xx responses, so valid signed callbacks are acknowledged
   // after idempotent persistence even when they contain only status callbacks.
