@@ -7,12 +7,14 @@ import { applyWhatsAppIdentityBindingAssertion } from "./identity-binding";
 const describeDb = process.env.DATABASE_URL ? describe : describe.skip;
 
 describeDb("WhatsApp trusted identity binding integration", () => {
-  it("binds an attested identity, wakes waiting messages once, then honors revoke ordering", async () => {
+  it("binds an attested identity, wakes waiting messages once, blocks silent rebind, then honors revoke ordering", async () => {
     const token = randomUUID().replaceAll("-", "");
     const address = `2547${token.replace(/[^0-9]/g, "").padEnd(12, "7").slice(0, 8)}`;
     const securepayIdentityRef = `KS-TEST-${token.slice(0, 12)}`;
+    const otherIdentityRef = `KS-OTHER-${token.slice(12, 24)}`;
     const providerMessageId = `wamid.${token}`;
     const bindAssertionId = `bind-${token}`;
+    const rebindAssertionId = `rebind-${token}`;
     const revokeAssertionId = `revoke-${token}`;
     const staleAssertionId = `stale-${token}`;
 
@@ -67,13 +69,29 @@ describeDb("WhatsApp trusted identity binding integration", () => {
       expect(wakeState?.supportConversationId).toBeTruthy();
       expect(wakeState?.traderSupportMessageId).toBeTruthy();
 
+      const blockedRebind = await applyWhatsAppIdentityBindingAssertion({
+        assertionId: rebindAssertionId,
+        channel: "WHATSAPP",
+        channelAddress: address,
+        securepayIdentityRef: otherIdentityRef,
+        action: "BIND",
+        authoritySequence: 2,
+        occurredAt: "2026-09-09T15:30:30+03:00",
+      });
+      expect(blockedRebind).toEqual({
+        status: "REBIND_REQUIRES_REVOKE",
+        action: "BIND",
+        wokeMessages: 0,
+        currentSequence: 1,
+      });
+
       const revoke = await applyWhatsAppIdentityBindingAssertion({
         assertionId: revokeAssertionId,
         channel: "WHATSAPP",
         channelAddress: address,
         securepayIdentityRef,
         action: "REVOKE",
-        authoritySequence: 2,
+        authoritySequence: 3,
         occurredAt: "2026-09-09T15:31:00+03:00",
       });
       expect(revoke).toEqual({ status: "APPLIED", action: "REVOKE", wokeMessages: 0 });
@@ -84,14 +102,14 @@ describeDb("WhatsApp trusted identity binding integration", () => {
         channelAddress: address,
         securepayIdentityRef,
         action: "BIND",
-        authoritySequence: 1,
+        authoritySequence: 2,
         occurredAt: "2026-09-09T15:29:00+03:00",
       });
       expect(stale).toEqual({
         status: "STALE",
         action: "BIND",
         wokeMessages: 0,
-        currentSequence: 2,
+        currentSequence: 3,
       });
 
       const mapping = rows<{ securepayIdentityRef: string | null; sequence: number }>(await db.execute(sql`
@@ -100,7 +118,7 @@ describeDb("WhatsApp trusted identity binding integration", () => {
           FROM support_channel_identities
          WHERE channel = 'WHATSAPP' AND channel_address = ${address}
       `))[0];
-      expect(mapping).toEqual({ securepayIdentityRef: null, sequence: 2 });
+      expect(mapping).toEqual({ securepayIdentityRef: null, sequence: 3 });
     } finally {
       await db.execute(sql`
         DELETE FROM support_triage_jobs
@@ -119,7 +137,7 @@ describeDb("WhatsApp trusted identity binding integration", () => {
       `);
       await db.execute(sql`
         DELETE FROM trader_support_conversations
-         WHERE securepay_identity_ref = ${securepayIdentityRef}
+         WHERE securepay_identity_ref IN (${securepayIdentityRef}, ${otherIdentityRef})
       `);
       await db.execute(sql`
         DELETE FROM support_channel_identity_assertions
