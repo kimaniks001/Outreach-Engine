@@ -18,6 +18,9 @@
     { "idx": 13, "version": "7", "when": 1788377000000, "tag": "0013_true_north_remote_team", "breakpoints": true },
     { "idx": 14, "version": "7", "when": 1788390000000, "tag": "0014_true_north_people_culture", "breakpoints": true },
     { "idx": 15, "version": "7", "when": 1788400000000, "tag": "0015_true_north_outreach_intelligence", "breakpoints": true },
-    { "idx": 16, "version": "7", "when": 1788410000000, "tag": "0016_true_north_growth_integration", "breakpoints": true }
+    { "idx": 16, "version": "7", "when": 1788410000000, "tag": "0016_true_north_growth_integration", "breakpoints": true },
+    { "idx": 17, "version": "7", "when": 1788959000000, "tag": "0017_whatsapp_support_foundation", "breakpoints": true },
+    { "idx": 18, "version": "7", "when": 1788960000000, "tag": "0018_whatsapp_triage_and_shelves", "breakpoints": true },
+    { "idx": 19, "version": "7", "when": 1788961000000, "tag": "0019_restricted_support_queue_guard", "breakpoints": true }
   ]
 }
