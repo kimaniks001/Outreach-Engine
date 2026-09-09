@@ -43,11 +43,24 @@ export async function processWhatsAppOutboxBatch(limit = 50): Promise<{
 
 async function claimOutbox(limit: number): Promise<ClaimedOutboxItem[]> {
   const result = await db.execute(sql`
-    WITH picked AS (
+    WITH expired AS (
+      UPDATE support_channel_outbox
+         SET status = 'FAILED', locked_at = NULL,
+             last_error = COALESCE(last_error, 'WhatsApp outbox worker lease expired after maximum attempts'),
+             updated_at = now()
+       WHERE status = 'SENDING'
+         AND locked_at IS NOT NULL
+         AND locked_at <= now() - interval '5 minutes'
+         AND attempts >= 5
+       RETURNING id
+    ), picked AS (
       SELECT id
         FROM support_channel_outbox
-       WHERE status IN ('PENDING','FAILED')
-         AND available_at <= now()
+       WHERE (
+               (status IN ('PENDING','FAILED') AND available_at <= now())
+               OR
+               (status = 'SENDING' AND locked_at IS NOT NULL AND locked_at <= now() - interval '5 minutes')
+             )
          AND attempts < 5
        ORDER BY created_at
        LIMIT ${limit}
