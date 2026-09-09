@@ -5,7 +5,7 @@ import type { NormalizedWhatsAppMessage } from "./protocol";
 export type WhatsAppIntakeOutcome =
   | { status: "DUPLICATE"; channelMessageId: string }
   | { status: "WAITING_IDENTITY"; channelMessageId: string }
-  | { status: "ROUTED"; channelMessageId: string; conversationId: string }
+  | { status: "TRIAGE_PENDING"; channelMessageId: string; conversationId: string }
   | { status: "IGNORED"; channelMessageId: string };
 
 export async function ingestWhatsAppMessage(message: NormalizedWhatsAppMessage): Promise<WhatsAppIntakeOutcome> {
@@ -21,7 +21,8 @@ export async function ingestWhatsAppMessage(message: NormalizedWhatsAppMessage):
       ON CONFLICT (channel, channel_message_id) DO NOTHING
       RETURNING id::text AS id
     `);
-    if (rows<{ id: string }>(inserted).length === 0) {
+    const channelMessage = rows<{ id: string }>(inserted)[0];
+    if (!channelMessage) {
       return { status: "DUPLICATE", channelMessageId: message.messageId };
     }
 
@@ -36,7 +37,7 @@ export async function ingestWhatsAppMessage(message: NormalizedWhatsAppMessage):
       await tx.execute(sql`
         UPDATE support_channel_messages
            SET processing_status = 'IGNORED', processed_at = now()
-         WHERE channel = 'WHATSAPP' AND channel_message_id = ${message.messageId}
+         WHERE id = ${channelMessage.id}::uuid
       `);
       return { status: "IGNORED", channelMessageId: message.messageId };
     }
@@ -55,7 +56,7 @@ export async function ingestWhatsAppMessage(message: NormalizedWhatsAppMessage):
       await tx.execute(sql`
         UPDATE support_channel_messages
            SET processing_status = 'WAITING_IDENTITY'
-         WHERE channel = 'WHATSAPP' AND channel_message_id = ${message.messageId}
+         WHERE id = ${channelMessage.id}::uuid
       `);
       return { status: "WAITING_IDENTITY", channelMessageId: message.messageId };
     }
@@ -77,12 +78,17 @@ export async function ingestWhatsAppMessage(message: NormalizedWhatsAppMessage):
 
     await tx.execute(sql`
       UPDATE support_channel_messages
-         SET processing_status = 'ROUTED', support_conversation_id = ${conversation.id}::uuid,
-             trader_support_message_id = ${supportMessage.id}::uuid, processed_at = now()
-       WHERE channel = 'WHATSAPP' AND channel_message_id = ${message.messageId}
+         SET processing_status = 'TRIAGE_PENDING', support_conversation_id = ${conversation.id}::uuid,
+             trader_support_message_id = ${supportMessage.id}::uuid
+       WHERE id = ${channelMessage.id}::uuid
+    `);
+    await tx.execute(sql`
+      INSERT INTO support_triage_jobs (channel_message_id)
+      VALUES (${channelMessage.id}::uuid)
+      ON CONFLICT (channel_message_id) DO NOTHING
     `);
 
-    return { status: "ROUTED", channelMessageId: message.messageId, conversationId: conversation.id };
+    return { status: "TRIAGE_PENDING", channelMessageId: message.messageId, conversationId: conversation.id };
   });
 }
 
