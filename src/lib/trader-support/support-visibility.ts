@@ -8,6 +8,12 @@ export interface VisibleSupportContextTarget {
   securepayIdentityRef: string;
 }
 
+/**
+ * Support visibility is Work-authoritative and queue-role bounded. OWNER is the
+ * current privileged support role in the locked role model. For everyone else,
+ * both the queue default role and an explicit work required_role must match.
+ * This keeps SENSITIVE_REVIEW / SECUREPAY_STAFF out of ordinary Plug shelves.
+ */
 export async function listVisibleSupportCases(userId: string): Promise<SupportCaseSummary[]> {
   const role = await requireActiveStaff(userId);
   const result = await db.execute(sql`
@@ -16,12 +22,18 @@ export async function listVisibleSupportCases(userId: string): Promise<SupportCa
            w.sla_due_at AS "slaDueAt", w.next_action AS "nextAction", c.opened_at AS "openedAt"
       FROM trader_support_cases c
       JOIN work_items w ON w.id = c.work_item_id
+      JOIN work_queues q ON q.id = w.queue_id
       LEFT JOIN users u ON u.id = w.owner_user_id
-     WHERE ${role === "OWNER"} = TRUE
-        OR w.owner_user_id = ${userId}::uuid
-        OR w.created_by_user_id = ${userId}::uuid
-        OR EXISTS (SELECT 1 FROM work_collaborators wc WHERE wc.work_item_id = w.id AND wc.user_id = ${userId}::uuid)
-        OR w.owner_user_id IS NULL
+     WHERE ${role === "OWNER"} = TRUE OR (
+       (q.default_role IS NULL OR q.default_role = ${role}::role)
+       AND (w.required_role IS NULL OR w.required_role = ${role}::role)
+       AND (
+         w.owner_user_id = ${userId}::uuid
+         OR w.created_by_user_id = ${userId}::uuid
+         OR EXISTS (SELECT 1 FROM work_collaborators wc WHERE wc.work_item_id = w.id AND wc.user_id = ${userId}::uuid)
+         OR w.owner_user_id IS NULL
+       )
+     )
      ORDER BY CASE w.priority WHEN 'CRITICAL' THEN 0 WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 ELSE 3 END,
               COALESCE(w.sla_due_at, 'infinity'::timestamptz), c.opened_at DESC
   `);
@@ -35,16 +47,21 @@ export async function listVisibleSupportConversations(userId: string): Promise<S
            c.last_message_at AS "lastMessageAt",
            (SELECT count(*)::int FROM trader_support_cases sc WHERE sc.conversation_id = c.id AND sc.state NOT IN ('RESOLVED','CLOSED')) AS "openCaseCount"
       FROM trader_support_conversations c
-     WHERE ${role === "OWNER"} = TRUE
-        OR c.created_by_user_id = ${userId}::uuid
-        OR EXISTS (
-          SELECT 1 FROM trader_support_cases sc
-          JOIN work_items w ON w.id = sc.work_item_id
-          WHERE sc.conversation_id = c.id AND (
-            w.owner_user_id = ${userId}::uuid OR w.created_by_user_id = ${userId}::uuid OR w.owner_user_id IS NULL
+     WHERE ${role === "OWNER"} = TRUE OR EXISTS (
+       SELECT 1
+         FROM trader_support_cases sc
+         JOIN work_items w ON w.id = sc.work_item_id
+         JOIN work_queues q ON q.id = w.queue_id
+        WHERE sc.conversation_id = c.id
+          AND (q.default_role IS NULL OR q.default_role = ${role}::role)
+          AND (w.required_role IS NULL OR w.required_role = ${role}::role)
+          AND (
+            w.owner_user_id = ${userId}::uuid
+            OR w.created_by_user_id = ${userId}::uuid
+            OR w.owner_user_id IS NULL
             OR EXISTS (SELECT 1 FROM work_collaborators wc WHERE wc.work_item_id = w.id AND wc.user_id = ${userId}::uuid)
           )
-        )
+     )
      ORDER BY c.last_message_at DESC
   `);
   return rows<SupportConversationSummary>(result).map((item) => ({ ...item, lastMessageAt: toDate(item.lastMessageAt), openCaseCount: Number(item.openCaseCount) }));
@@ -77,10 +94,17 @@ export async function visibleSupportContextTarget(userId: string, caseId: string
            conversation.securepay_identity_ref AS "securepayIdentityRef"
       FROM trader_support_cases c
       JOIN work_items w ON w.id = c.work_item_id
+      JOIN work_queues q ON q.id = w.queue_id
       JOIN trader_support_conversations conversation ON conversation.id = c.conversation_id
      WHERE c.id = ${caseId}::uuid AND (
-       ${role === "OWNER"} = TRUE OR w.owner_user_id = ${userId}::uuid OR w.created_by_user_id = ${userId}::uuid OR w.owner_user_id IS NULL
-       OR EXISTS (SELECT 1 FROM work_collaborators wc WHERE wc.work_item_id = w.id AND wc.user_id = ${userId}::uuid)
+       ${role === "OWNER"} = TRUE OR (
+         (q.default_role IS NULL OR q.default_role = ${role}::role)
+         AND (w.required_role IS NULL OR w.required_role = ${role}::role)
+         AND (
+           w.owner_user_id = ${userId}::uuid OR w.created_by_user_id = ${userId}::uuid OR w.owner_user_id IS NULL
+           OR EXISTS (SELECT 1 FROM work_collaborators wc WHERE wc.work_item_id = w.id AND wc.user_id = ${userId}::uuid)
+         )
+       )
      ) LIMIT 1
   `);
   const target = rows<VisibleSupportContextTarget>(result)[0];
@@ -93,12 +117,18 @@ async function requireConversationVisibility(userId: string, conversationId: str
   const result = await db.execute(sql`
     SELECT 1 FROM trader_support_conversations c
      WHERE c.id = ${conversationId}::uuid AND (
-       ${role === "OWNER"} = TRUE OR c.created_by_user_id = ${userId}::uuid OR EXISTS (
-         SELECT 1 FROM trader_support_cases sc JOIN work_items w ON w.id = sc.work_item_id
-          WHERE sc.conversation_id = c.id AND (
-            w.owner_user_id = ${userId}::uuid OR w.created_by_user_id = ${userId}::uuid OR w.owner_user_id IS NULL
-            OR EXISTS (SELECT 1 FROM work_collaborators wc WHERE wc.work_item_id = w.id AND wc.user_id = ${userId}::uuid)
-          )
+       ${role === "OWNER"} = TRUE OR EXISTS (
+         SELECT 1
+           FROM trader_support_cases sc
+           JOIN work_items w ON w.id = sc.work_item_id
+           JOIN work_queues q ON q.id = w.queue_id
+          WHERE sc.conversation_id = c.id
+            AND (q.default_role IS NULL OR q.default_role = ${role}::role)
+            AND (w.required_role IS NULL OR w.required_role = ${role}::role)
+            AND (
+              w.owner_user_id = ${userId}::uuid OR w.created_by_user_id = ${userId}::uuid OR w.owner_user_id IS NULL
+              OR EXISTS (SELECT 1 FROM work_collaborators wc WHERE wc.work_item_id = w.id AND wc.user_id = ${userId}::uuid)
+            )
        )
      ) LIMIT 1
   `);

@@ -10,6 +10,9 @@ export interface QueuedWhatsAppHumanReply {
  * Persist a staff/Plug reply and its WhatsApp delivery atomically.
  * The caller must already have passed Outreach's staff/work-item authorization.
  * This function re-checks that the actor is active and that the conversation is open.
+ * Human replies deliberately do not retain source_channel_message_id: several human
+ * replies may naturally follow the same inbound WhatsApp message. Provider threading
+ * still uses reply_to_channel_message_id while dedupe is HUMAN:<support-message-id>.
  */
 export async function queueWhatsAppHumanReply(input: {
   actorUserId: string;
@@ -26,15 +29,14 @@ export async function queueWhatsAppHumanReply(input: {
     `))[0];
     if (!actor) throw new Error("Active Outreach staff identity required");
 
-    const conversation = rows<{ id: string; channelAddress: string; providerMessageId: string | null; sourceChannelMessageId: string | null }>(
+    const conversation = rows<{ id: string; channelAddress: string; providerMessageId: string | null }>(
       await tx.execute(sql`
         SELECT c.id::text AS id,
                m.channel_address AS "channelAddress",
-               m.channel_message_id AS "providerMessageId",
-               m.id::text AS "sourceChannelMessageId"
+               m.channel_message_id AS "providerMessageId"
           FROM trader_support_conversations c
           LEFT JOIN LATERAL (
-            SELECT scm.id, scm.channel_address, scm.channel_message_id
+            SELECT scm.channel_address, scm.channel_message_id
               FROM support_channel_messages scm
              WHERE scm.support_conversation_id = c.id
                AND scm.channel = 'WHATSAPP'
@@ -66,7 +68,7 @@ export async function queueWhatsAppHumanReply(input: {
         reply_to_channel_message_id, purpose
       ) VALUES (
         ${dedupeKey}, 'WHATSAPP', ${conversation.channelAddress},
-        ${conversation.sourceChannelMessageId}::uuid, ${input.conversationId}::uuid,
+        NULL, ${input.conversationId}::uuid,
         ${supportMessage.id}::uuid, ${body}, ${conversation.providerMessageId}, 'HUMAN_REPLY'
       )
       ON CONFLICT (dedupe_key) DO UPDATE SET updated_at = support_channel_outbox.updated_at
