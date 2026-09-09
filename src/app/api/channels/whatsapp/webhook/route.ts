@@ -22,7 +22,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "INVALID_SIGNATURE" }, { status: 401 });
   }
 
-  const payload = JSON.parse(rawBody) as unknown;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawBody) as unknown;
+  } catch {
+    return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
+  }
+
   const messages = normalizeWhatsAppWebhook(payload);
   const outcomes = [];
   for (const message of messages) {
