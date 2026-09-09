@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "drizzle/**"
+      - "package.json"
       - "src/app/(community)/**"
       - "src/app/(dashboard)/today/**"
       - "src/app/(dashboard)/conversations/**"
@@ -58,6 +59,7 @@ on:
       - "src/lib/rbac/**"
       - "src/lib/distribution/**"
       - "src/lib/audit/**"
+      - "scripts/whatsapp-support-worker.ts"
       - "scripts/verify-production-closure.ts"
       - "docs/TRUE_NORTH_PHASE_10_PRODUCTION_CLOSURE.md"
       - "next.config.mjs"
