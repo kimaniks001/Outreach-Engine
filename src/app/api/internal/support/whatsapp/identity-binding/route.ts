@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
   }
 
   const result = await applyWhatsAppIdentityBindingAssertion(assertion);
-  const status = result.status === "IDENTITY_MISMATCH" ? 409 : 200;
+  const status = result.status === "IDENTITY_MISMATCH" || result.status === "REBIND_REQUIRES_REVOKE" ? 409 : 200;
   return noStore({ assertionId: assertion.assertionId, ...result }, status);
 }
 
