@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { SUPPORT_FRAGMENT_CONTEXT_MS, SUPPORT_FRAGMENT_SETTLE_MS } from "./fragment-window";
 import type { NormalizedWhatsAppMessage } from "./protocol";
 
 export type WhatsAppIntakeOutcome =
@@ -82,9 +83,35 @@ export async function ingestWhatsAppMessage(message: NormalizedWhatsAppMessage):
              trader_support_message_id = ${supportMessage.id}::uuid
        WHERE id = ${channelMessage.id}::uuid
     `);
+
+    // WhatsApp is naturally fragmented: "Where is my payment?" / "The one to John" /
+    // "for the laptop" is one customer turn, not three tickets. Keep every inbound
+    // message for audit, but supersede older not-yet-started triage jobs in the same
+    // recent conversation window. A short settle delay lets the newest fragment become
+    // the single processing leader. Jobs already PROCESSING are never stolen.
     await tx.execute(sql`
-      INSERT INTO support_triage_jobs (channel_message_id)
-      VALUES (${channelMessage.id}::uuid)
+      WITH superseded AS (
+        UPDATE support_triage_jobs j
+           SET status = 'DONE', locked_at = NULL, updated_at = now(),
+               last_error = 'Superseded by a newer WhatsApp fragment in the same customer turn.'
+          FROM support_channel_messages prior
+         WHERE j.channel_message_id = prior.id
+           AND prior.support_conversation_id = ${conversation.id}::uuid
+           AND prior.id <> ${channelMessage.id}::uuid
+           AND prior.received_at >= now() - (${SUPPORT_FRAGMENT_CONTEXT_MS} * interval '1 millisecond')
+           AND j.status IN ('PENDING','FAILED')
+        RETURNING prior.id
+      )
+      UPDATE support_channel_messages m
+         SET processing_status = 'TRIAGED', processed_at = now()
+        FROM superseded s
+       WHERE m.id = s.id
+         AND m.processing_status = 'TRIAGE_PENDING'
+    `);
+
+    await tx.execute(sql`
+      INSERT INTO support_triage_jobs (channel_message_id, available_at)
+      VALUES (${channelMessage.id}::uuid, now() + (${SUPPORT_FRAGMENT_SETTLE_MS} * interval '1 millisecond'))
       ON CONFLICT (channel_message_id) DO NOTHING
     `);
 
