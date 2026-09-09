@@ -37,6 +37,7 @@ on:
       - "src/lib/conversations/**"
       - "src/lib/work/**"
       - "src/lib/trader-support/**"
+      - "src/lib/whatsapp/**"
       - "src/lib/operations/**"
       - "src/lib/community/**"
       - "src/lib/readiness/**"
