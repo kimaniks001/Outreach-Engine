@@ -65,15 +65,12 @@ CREATE TABLE IF NOT EXISTS support_channel_outbox (
   sent_at timestamptz,
   last_error text,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (source_channel_message_id, purpose)
 );
 CREATE INDEX IF NOT EXISTS support_channel_outbox_ready_idx
   ON support_channel_outbox(status, available_at, created_at)
   WHERE status IN ('PENDING','FAILED');
-CREATE UNIQUE INDEX IF NOT EXISTS support_channel_outbox_auto_dedupe_idx
-  ON support_channel_outbox(source_channel_message_id, purpose)
-  WHERE source_channel_message_id IS NOT NULL
-    AND purpose IN ('AUTO_GUIDANCE','AUTO_CONTEXT','ACKNOWLEDGEMENT');
 
 INSERT INTO work_queues (queue_key, name, description, default_role)
 VALUES
@@ -87,4 +84,4 @@ COMMENT ON TABLE support_triage_jobs IS
 COMMENT ON TABLE support_triage_decisions IS
   'Explainable support-routing outcome. It assigns support handling only and grants no SecurePay agreement, identity, money, release or settlement authority.';
 COMMENT ON TABLE support_channel_outbox IS
-  'Durable outbound support messages. Automated replies dedupe by inbound message/purpose; human replies carry their own stable dedupe key and may continue naturally in the same WhatsApp thread. Provider retries/outages cannot lose or duplicate customer communication.';
+  'Durable outbound support messages. Automated replies dedupe by inbound message/purpose. Human replies leave source_channel_message_id null and use their stable HUMAN:<support-message-id> dedupe key, allowing a natural multi-turn WhatsApp thread.';
