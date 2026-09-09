@@ -2,14 +2,21 @@ import Link from "next/link";
 import { requireUser } from "@/lib/rbac/guard";
 import { listStaffDirectory } from "@/lib/conversations/staff-conversations";
 import { listServiceSignals, listVisibleIncidents } from "@/lib/operations/incident-engine";
+import { readSupportRuntimeHealth, supportHealthState } from "@/lib/whatsapp/runtime-health";
 import { openIncidentAction, recordSignalAction } from "./actions";
 
 export default async function OperationsPage() {
   const user = await requireUser();
-  const [incidents, signals, staff] = await Promise.all([listVisibleIncidents(user.id), listServiceSignals(user.id, 20), listStaffDirectory()]);
+  const [incidents, signals, staff, supportHealth] = await Promise.all([
+    listVisibleIncidents(user.id),
+    listServiceSignals(user.id, 20),
+    listStaffDirectory(),
+    readSupportRuntimeHealth(),
+  ]);
   const active = incidents.filter((item) => !["RESOLVED", "CLOSED"].includes(item.state));
   const critical = active.filter((item) => item.severity === "SEV1" || item.severity === "SEV2");
   const affectedEstimate = active.reduce((sum, item) => sum + item.affectedTraderCount, 0);
+  const supportState = supportHealthState(supportHealth);
 
   return (
     <div className="mx-auto max-w-7xl outreach-rise">
@@ -29,6 +36,33 @@ export default async function OperationsPage() {
               <Metric value={signals.length} label="recent signals" />
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="mt-6 rounded-[26px] border border-surface-border bg-surface-raised p-5 shadow-sm sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-faint">WhatsApp support runtime</p>
+            <h2 className="mt-1 font-display text-3xl text-ink">Queue pressure · {supportState.replaceAll("_", " ")}</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">Every inbound message remains durable. Triage leases can be safely reclaimed after a worker interruption; an outbound send with an unknown Meta result is quarantined instead of being replayed and risking a duplicate customer message.</p>
+          </div>
+          <div className={`rounded-full px-4 py-2 text-xs font-semibold ${supportState === "HEALTHY" ? "bg-brand-soft text-brand-muted" : supportState === "DEGRADED" ? "bg-amber-50 text-amber-800" : "bg-red-50 text-red-700"}`}>
+            {supportState.replaceAll("_", " ")}
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+          <SupportMetric label="triage ready" value={supportHealth.triageReady} />
+          <SupportMetric label="outbound ready" value={supportHealth.outboxReady} />
+          <SupportMetric label="delivery uncertain" value={supportHealth.outboxUncertain} attention={supportHealth.outboxUncertain > 0} />
+          <SupportMetric label="waiting identity" value={supportHealth.waitingIdentity} />
+          <SupportMetric label="Plug shelf" value={supportHealth.plugWaiting} />
+          <SupportMetric label="staff shelf" value={supportHealth.staffWaiting} />
+          <SupportMetric label="sensitive shelf" value={supportHealth.sensitiveWaiting} />
+          <SupportMetric label="triage processing" value={supportHealth.triageProcessing} />
+          <SupportMetric label="outbound sending" value={supportHealth.outboxSending} />
+          <SupportMetric label="stale triage" value={supportHealth.triageStale} attention={supportHealth.triageStale > 0} />
+          <SupportMetric label="oldest triage" value={formatAge(supportHealth.oldestTriageSeconds)} attention={supportHealth.oldestTriageSeconds > 300} />
+          <SupportMetric label="oldest outbound" value={formatAge(supportHealth.oldestOutboxSeconds)} attention={supportHealth.oldestOutboxSeconds > 300} />
         </div>
       </section>
 
@@ -82,4 +116,6 @@ export default async function OperationsPage() {
 }
 
 function Metric({ value, label }: { value: number; label: string }) { return <div><p className="font-display text-4xl leading-none">{value}</p><p className="mt-1 text-xs text-white/65">{label}</p></div>; }
+function SupportMetric({ value, label, attention = false }: { value: number | string; label: string; attention?: boolean }) { return <div className={`rounded-2xl p-3 ${attention ? "bg-red-50" : "bg-surface-soft"}`}><p className={`font-display text-2xl leading-none ${attention ? "text-red-700" : "text-ink"}`}>{value}</p><p className={`mt-1 text-[11px] ${attention ? "text-red-600" : "text-ink-faint"}`}>{label}</p></div>; }
+function formatAge(seconds: number): string { if (seconds < 60) return `${seconds}s`; if (seconds < 3600) return `${Math.floor(seconds / 60)}m`; return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`; }
 function Empty() { return <div className="rounded-2xl border border-brand/15 bg-brand-soft/30 p-6"><p className="font-display text-2xl text-brand-muted">No visible incidents.</p><p className="mt-2 text-sm leading-6 text-ink-muted">That is good news. When evidence requires coordinated response, the incident will carry an owner, room, chronology and Work responsibility.</p></div>; }
