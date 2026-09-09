@@ -193,29 +193,39 @@ async function createOrReuseCase(
   extraReason?: string
 ): Promise<SupportCaseRef> {
   const subject = `WhatsApp ${decision.intent}`;
-  const existing = rows<SupportCaseRef>(await db.execute(sql`
-    SELECT c.id::text AS "caseId", c.work_item_id::text AS "workItemId"
-      FROM trader_support_cases c
-      JOIN work_items w ON w.id = c.work_item_id
-     WHERE c.conversation_id = ${job.conversationId}::uuid
-       AND c.subject = ${subject}
-       AND c.state IN ('OPEN','WAITING_ON_TRADER','WAITING_INTERNAL')
-       AND c.opened_at >= now() - interval '30 minutes'
-     ORDER BY c.opened_at DESC LIMIT 1
-  `))[0];
-  if (existing) {
-    await db.execute(sql`UPDATE trader_support_cases SET state = 'OPEN' WHERE id = ${existing.caseId}::uuid AND state = 'WAITING_ON_TRADER'`);
-    await appendWorkContext(existing.workItemId, `\n\nCUSTOMER FOLLOW-UP\n${clip(aggregateText, 1800)}`);
-    return existing;
-  }
+  const lockKey = `${job.conversationId}|${subject}`;
 
-  const queue = rows<{ id: string }>(await db.execute(sql`
-    SELECT id::text AS id FROM work_queues WHERE queue_key = ${queueKey} AND active = TRUE LIMIT 1
-  `))[0];
-  if (!queue) throw new Error(`Support queue ${queueKey} is unavailable`);
-
-  const context = jobCard(job, decision, aggregateText, extraReason);
   return db.transaction(async (tx) => {
+    // Case creation is serialized per conversation + intent. Without this lock,
+    // two parallel fragment jobs can both observe "no open case" and create
+    // duplicate human work before either insert commits.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+
+    const existing = rows<SupportCaseRef>(await tx.execute(sql`
+      SELECT c.id::text AS "caseId", c.work_item_id::text AS "workItemId"
+        FROM trader_support_cases c
+        JOIN work_items w ON w.id = c.work_item_id
+       WHERE c.conversation_id = ${job.conversationId}::uuid
+         AND c.subject = ${subject}
+         AND c.state IN ('OPEN','WAITING_ON_TRADER','WAITING_INTERNAL')
+         AND c.opened_at >= now() - interval '30 minutes'
+       ORDER BY c.opened_at DESC LIMIT 1
+    `))[0];
+    if (existing) {
+      await tx.execute(sql`UPDATE trader_support_cases SET state = 'OPEN' WHERE id = ${existing.caseId}::uuid AND state = 'WAITING_ON_TRADER'`);
+      await tx.execute(sql`
+        UPDATE work_items SET context = left(context || ${`\n\nCUSTOMER FOLLOW-UP\n${clip(aggregateText, 1800)}`}, 12000), updated_at = now()
+         WHERE id = ${existing.workItemId}::uuid
+      `);
+      return existing;
+    }
+
+    const queue = rows<{ id: string }>(await tx.execute(sql`
+      SELECT id::text AS id FROM work_queues WHERE queue_key = ${queueKey} AND active = TRUE LIMIT 1
+    `))[0];
+    if (!queue) throw new Error(`Support queue ${queueKey} is unavailable`);
+
+    const context = jobCard(job, decision, aggregateText, extraReason);
     const work = rows<{ id: string }>(await tx.execute(sql`
       INSERT INTO work_items (
         work_type, title, context, next_action, queue_id, priority, status, routing_reason
@@ -247,11 +257,30 @@ async function createOrReuseCase(
 
 async function claimJobs(limit: number): Promise<ClaimedTriageJob[]> {
   const result = await db.execute(sql`
-    WITH picked AS (
+    WITH expired_jobs AS (
+      UPDATE support_triage_jobs
+         SET status = 'FAILED', locked_at = NULL,
+             last_error = COALESCE(last_error, 'WhatsApp triage worker lease expired after maximum attempts'),
+             updated_at = now()
+       WHERE status = 'PROCESSING'
+         AND locked_at IS NOT NULL
+         AND locked_at <= now() - interval '5 minutes'
+         AND attempts >= 5
+       RETURNING channel_message_id
+    ), expired_messages AS (
+      UPDATE support_channel_messages m
+         SET processing_status = 'FAILED', processed_at = now()
+        FROM expired_jobs e
+       WHERE m.id = e.channel_message_id
+       RETURNING m.id
+    ), picked AS (
       SELECT id
         FROM support_triage_jobs
-       WHERE status IN ('PENDING','FAILED')
-         AND available_at <= now()
+       WHERE (
+               (status IN ('PENDING','FAILED') AND available_at <= now())
+               OR
+               (status = 'PROCESSING' AND locked_at IS NOT NULL AND locked_at <= now() - interval '5 minutes')
+             )
          AND attempts < 5
        ORDER BY created_at
        LIMIT ${limit}
