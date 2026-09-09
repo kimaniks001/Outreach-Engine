@@ -48,7 +48,7 @@ CREATE INDEX IF NOT EXISTS support_triage_decisions_route_idx ON support_triage_
 
 CREATE TABLE IF NOT EXISTS support_channel_outbox (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  dedupe_key text NOT NULL UNIQUE CHECK (char_length(dedupe_key) BETWEEN 8 AND 180),
+  dedupe_key text NOT NULL DEFAULT gen_random_uuid()::text UNIQUE CHECK (char_length(dedupe_key) BETWEEN 8 AND 180),
   channel text NOT NULL CHECK (channel IN ('WHATSAPP')),
   channel_address text NOT NULL CHECK (char_length(channel_address) BETWEEN 5 AND 80),
   source_channel_message_id uuid REFERENCES support_channel_messages(id) ON DELETE SET NULL,
@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS support_channel_outbox (
   sent_at timestamptz,
   last_error text,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (source_channel_message_id, purpose)
 );
 CREATE INDEX IF NOT EXISTS support_channel_outbox_ready_idx
   ON support_channel_outbox(status, available_at, created_at)
@@ -83,4 +84,4 @@ COMMENT ON TABLE support_triage_jobs IS
 COMMENT ON TABLE support_triage_decisions IS
   'Explainable support-routing outcome. It assigns support handling only and grants no SecurePay agreement, identity, money, release or settlement authority.';
 COMMENT ON TABLE support_channel_outbox IS
-  'Durable outbound support messages. A support decision or human reply is persisted before transport so provider retries/outages do not lose or duplicate customer communication.';
+  'Durable outbound support messages. Automated replies dedupe by inbound message/purpose; human replies carry their own stable dedupe key. Provider retries/outages cannot lose or duplicate customer communication.';
