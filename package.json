@@ -10,6 +10,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "worker:whatsapp": "tsx scripts/whatsapp-support-worker.ts",
+    "worker:whatsapp:local": "tsx --env-file=.env.local scripts/whatsapp-support-worker.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "verify:production": "tsx scripts/verify-production-closure.ts",
