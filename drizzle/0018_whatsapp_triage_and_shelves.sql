@@ -48,10 +48,12 @@ CREATE INDEX IF NOT EXISTS support_triage_decisions_route_idx ON support_triage_
 
 CREATE TABLE IF NOT EXISTS support_channel_outbox (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  dedupe_key text NOT NULL UNIQUE CHECK (char_length(dedupe_key) BETWEEN 8 AND 180),
   channel text NOT NULL CHECK (channel IN ('WHATSAPP')),
   channel_address text NOT NULL CHECK (char_length(channel_address) BETWEEN 5 AND 80),
   source_channel_message_id uuid REFERENCES support_channel_messages(id) ON DELETE SET NULL,
   support_conversation_id uuid REFERENCES trader_support_conversations(id) ON DELETE SET NULL,
+  trader_support_message_id uuid UNIQUE REFERENCES trader_support_messages(id) ON DELETE SET NULL,
   body text NOT NULL CHECK (char_length(body) BETWEEN 1 AND 4096),
   reply_to_channel_message_id text,
   purpose text NOT NULL CHECK (purpose IN ('AUTO_GUIDANCE','AUTO_CONTEXT','ACKNOWLEDGEMENT','HUMAN_REPLY')),
@@ -63,8 +65,7 @@ CREATE TABLE IF NOT EXISTS support_channel_outbox (
   sent_at timestamptz,
   last_error text,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (source_channel_message_id, purpose)
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS support_channel_outbox_ready_idx
   ON support_channel_outbox(status, available_at, created_at)
@@ -82,4 +83,4 @@ COMMENT ON TABLE support_triage_jobs IS
 COMMENT ON TABLE support_triage_decisions IS
   'Explainable support-routing outcome. It assigns support handling only and grants no SecurePay agreement, identity, money, release or settlement authority.';
 COMMENT ON TABLE support_channel_outbox IS
-  'Durable outbound support messages. A support decision is persisted before transport so provider retries/outages do not lose customer communication.';
+  'Durable outbound support messages. A support decision or human reply is persisted before transport so provider retries/outages do not lose or duplicate customer communication.';
