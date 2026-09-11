@@ -512,7 +512,7 @@ function clip(value: string, max: number): string {
 }
 
 function rows<T>(result: unknown): T[] {
-  return ((result as { rows?: T[] }).rows ?? [];
+  return ((result as { rows?: T[] }).rows ?? []);
 }
 
 async function mapWithConcurrency<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
