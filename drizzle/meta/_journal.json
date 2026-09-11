@@ -23,6 +23,7 @@
     { "idx": 18, "version": "7", "when": 1788960000000, "tag": "0018_whatsapp_triage_and_shelves", "breakpoints": true },
     { "idx": 19, "version": "7", "when": 1788961000000, "tag": "0019_restricted_support_queue_guard", "breakpoints": true },
     { "idx": 20, "version": "7", "when": 1788968000000, "tag": "0020_whatsapp_runtime_recovery", "breakpoints": true },
-    { "idx": 21, "version": "7", "when": 1788969000000, "tag": "0021_whatsapp_trusted_identity_binding", "breakpoints": true }
+    { "idx": 21, "version": "7", "when": 1788969000000, "tag": "0021_whatsapp_trusted_identity_binding", "breakpoints": true },
+    { "idx": 22, "version": "7", "when": 1789138800000, "tag": "0022_whatsapp_binding_consumer_epoch", "breakpoints": true }
   ]
 }
