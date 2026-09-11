@@ -182,6 +182,9 @@ export async function applyWhatsAppIdentityBindingAssertion(
            SET processing_status = 'TRIAGE_PENDING',
                support_conversation_id = ${conversation.id}::uuid,
                trader_support_message_id = ${supportMessage.id}::uuid,
+               binding_securepay_identity_ref = ${normalized.securepayIdentityRef},
+               binding_authority_sequence = ${normalized.authoritySequence},
+               binding_assertion_id = ${normalized.assertionId},
                processed_at = NULL
          WHERE id = ${message.id}::uuid
            AND processing_status = 'WAITING_IDENTITY'
