@@ -43,17 +43,27 @@ export async function ingestWhatsAppMessage(message: NormalizedWhatsAppMessage):
       return { status: "IGNORED", channelMessageId: message.messageId };
     }
 
-    const identity = rows<{ securepayIdentityRef: string | null }>(await tx.execute(sql`
-      SELECT securepay_identity_ref AS "securepayIdentityRef"
+    const identity = rows<{
+      securepayIdentityRef: string | null;
+      bindingAuthoritySequence: string | number | null;
+      bindingAssertionId: string | null;
+    }>(await tx.execute(sql`
+      SELECT securepay_identity_ref AS "securepayIdentityRef",
+             binding_authority_sequence AS "bindingAuthoritySequence",
+             binding_assertion_id AS "bindingAssertionId"
         FROM support_channel_identities
        WHERE channel = 'WHATSAPP' AND channel_address = ${message.from}
        LIMIT 1
     `))[0];
 
     // A phone number is a communication address, never proof of SecurePay identity.
-    // Until a trusted workflow binds it, keep the message visible to intake without
-    // exposing or guessing any SecurePay account context.
-    if (!identity?.securepayIdentityRef) {
+    // Only a complete signed-binding snapshot may move a message into triage. Legacy
+    // or partially populated mappings fail closed in WAITING_IDENTITY.
+    if (
+      !identity?.securepayIdentityRef ||
+      !identity.bindingAssertionId ||
+      Number(identity.bindingAuthoritySequence ?? 0) <= 0
+    ) {
       await tx.execute(sql`
         UPDATE support_channel_messages
            SET processing_status = 'WAITING_IDENTITY'
@@ -62,6 +72,7 @@ export async function ingestWhatsAppMessage(message: NormalizedWhatsAppMessage):
       return { status: "WAITING_IDENTITY", channelMessageId: message.messageId };
     }
 
+    const bindingAuthoritySequence = Number(identity.bindingAuthoritySequence);
     const conversation = rows<{ id: string }>(await tx.execute(sql`
       INSERT INTO trader_support_conversations (securepay_identity_ref)
       VALUES (${identity.securepayIdentityRef})
@@ -79,8 +90,12 @@ export async function ingestWhatsAppMessage(message: NormalizedWhatsAppMessage):
 
     await tx.execute(sql`
       UPDATE support_channel_messages
-         SET processing_status = 'TRIAGE_PENDING', support_conversation_id = ${conversation.id}::uuid,
-             trader_support_message_id = ${supportMessage.id}::uuid
+         SET processing_status = 'TRIAGE_PENDING',
+             support_conversation_id = ${conversation.id}::uuid,
+             trader_support_message_id = ${supportMessage.id}::uuid,
+             binding_securepay_identity_ref = ${identity.securepayIdentityRef},
+             binding_authority_sequence = ${bindingAuthoritySequence},
+             binding_assertion_id = ${identity.bindingAssertionId}
        WHERE id = ${channelMessage.id}::uuid
     `);
 
@@ -117,30 +132,6 @@ export async function ingestWhatsAppMessage(message: NormalizedWhatsAppMessage):
 
     return { status: "TRIAGE_PENDING", channelMessageId: message.messageId, conversationId: conversation.id };
   });
-}
-
-/**
- * Binds WhatsApp to SecurePay only after a trusted upstream identity workflow has
- * independently established the relationship. This function deliberately does
- * not perform phone-number-to-account discovery.
- */
-export async function bindVerifiedWhatsAppIdentity(input: {
-  channelAddress: string;
-  securepayIdentityRef: string;
-}): Promise<void> {
-  const address = input.channelAddress.replace(/[^0-9]/g, "");
-  const identityRef = input.securepayIdentityRef.trim();
-  if (address.length < 5 || address.length > 80) throw new Error("Invalid WhatsApp address");
-  if (identityRef.length < 3 || identityRef.length > 120) throw new Error("Invalid SecurePay identity reference");
-
-  await db.execute(sql`
-    INSERT INTO support_channel_identities (
-      channel, channel_address, securepay_identity_ref, verified_at, last_seen_at
-    ) VALUES ('WHATSAPP', ${address}, ${identityRef}, now(), now())
-    ON CONFLICT (channel, channel_address) DO UPDATE
-      SET securepay_identity_ref = EXCLUDED.securepay_identity_ref,
-          verified_at = now(), updated_at = now()
-  `);
 }
 
 function rows<T>(result: unknown): T[] {
