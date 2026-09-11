@@ -13,6 +13,8 @@ interface ClaimedTriageJob {
   body: string;
   conversationId: string;
   securepayIdentityRef: string;
+  bindingAuthoritySequence: number;
+  bindingAssertionId: string;
   receivedAt: Date;
 }
 
@@ -45,6 +47,14 @@ export async function processWhatsAppTriageBatch(limit = 25): Promise<{
 }
 
 async function processJob(job: ClaimedTriageJob): Promise<void> {
+  // The address may have been revoked/rebound after ingress. Never re-resolve a
+  // pending message onto whatever identity owns the address now. Its stored epoch
+  // is the only routing authority for this job; a mismatch is terminal/stale.
+  if (!(await bindingSnapshotStillCurrent(job))) {
+    await markChannelMessage(job.channelMessageDbId, "STALE_BINDING");
+    return;
+  }
+
   const aggregate = await aggregateConversation(job.conversationId, job.receivedAt);
   const decision = classifySupportMessage(aggregate.text);
 
@@ -246,16 +256,44 @@ async function createOrReuseCase(
 }
 
 async function claimJobs(limit: number): Promise<ClaimedTriageJob[]> {
+  // Pre-existing or malformed jobs without an authoritative ingress snapshot are not
+  // allowed to discover a current identity retroactively. Close them fail-closed.
+  await db.execute(sql`
+    WITH stale AS (
+      UPDATE support_triage_jobs j
+         SET status = 'DONE', locked_at = NULL, updated_at = now(),
+             last_error = 'No authoritative WhatsApp binding snapshot was captured at ingress.'
+        FROM support_channel_messages m
+       WHERE j.channel_message_id = m.id
+         AND j.status IN ('PENDING','FAILED')
+         AND (
+           m.binding_securepay_identity_ref IS NULL OR
+           m.binding_authority_sequence IS NULL OR
+           m.binding_assertion_id IS NULL
+         )
+      RETURNING m.id
+    )
+    UPDATE support_channel_messages m
+       SET processing_status = 'STALE_BINDING', processed_at = now()
+      FROM stale s
+     WHERE m.id = s.id
+  `);
+
   const result = await db.execute(sql`
     WITH picked AS (
-      SELECT id
-        FROM support_triage_jobs
-       WHERE status IN ('PENDING','FAILED')
-         AND available_at <= now()
-         AND attempts < 5
-       ORDER BY created_at
+      SELECT j.id
+        FROM support_triage_jobs j
+        JOIN support_channel_messages m ON m.id = j.channel_message_id
+       WHERE j.status IN ('PENDING','FAILED')
+         AND j.available_at <= now()
+         AND j.attempts < 5
+         AND m.support_conversation_id IS NOT NULL
+         AND m.binding_securepay_identity_ref IS NOT NULL
+         AND m.binding_authority_sequence IS NOT NULL
+         AND m.binding_assertion_id IS NOT NULL
+       ORDER BY j.created_at
        LIMIT ${limit}
-       FOR UPDATE SKIP LOCKED
+       FOR UPDATE OF j SKIP LOCKED
     ), claimed AS (
       UPDATE support_triage_jobs j
          SET status = 'PROCESSING', attempts = attempts + 1, locked_at = now(), updated_at = now(), last_error = NULL
@@ -267,14 +305,36 @@ async function claimJobs(limit: number): Promise<ClaimedTriageJob[]> {
            m.id::text AS "channelMessageDbId", m.channel_message_id AS "providerMessageId",
            m.channel_address AS "channelAddress", m.body,
            m.support_conversation_id::text AS "conversationId",
-           i.securepay_identity_ref AS "securepayIdentityRef", m.received_at AS "receivedAt"
+           m.binding_securepay_identity_ref AS "securepayIdentityRef",
+           m.binding_authority_sequence AS "bindingAuthoritySequence",
+           m.binding_assertion_id AS "bindingAssertionId",
+           m.received_at AS "receivedAt"
       FROM claimed c
       JOIN support_channel_messages m ON m.id = c.channel_message_id
-      JOIN support_channel_identities i ON i.channel = m.channel AND i.channel_address = m.channel_address
-     WHERE m.support_conversation_id IS NOT NULL
-       AND i.securepay_identity_ref IS NOT NULL
   `);
-  return rows<ClaimedTriageJob>(result).map((job) => ({ ...job, receivedAt: new Date(job.receivedAt) }));
+  return rows<Omit<ClaimedTriageJob, "bindingAuthoritySequence" | "receivedAt"> & {
+    bindingAuthoritySequence: string | number;
+    receivedAt: Date | string;
+  }>(result).map((job) => ({
+    ...job,
+    bindingAuthoritySequence: Number(job.bindingAuthoritySequence),
+    receivedAt: new Date(job.receivedAt),
+  }));
+}
+
+async function bindingSnapshotStillCurrent(job: ClaimedTriageJob): Promise<boolean> {
+  const current = rows<{ current: number }>(await db.execute(sql`
+    SELECT 1 AS current
+      FROM support_channel_identities
+     WHERE channel = 'WHATSAPP'
+       AND channel_address = ${job.channelAddress}
+       AND securepay_identity_ref = ${job.securepayIdentityRef}
+       AND binding_authority_sequence = ${job.bindingAuthoritySequence}
+       AND binding_assertion_id = ${job.bindingAssertionId}
+       AND revoked_at IS NULL
+     LIMIT 1
+  `));
+  return current.length === 1;
 }
 
 async function aggregateConversation(conversationId: string, receivedAt: Date): Promise<{ text: string; count: number }> {
@@ -300,10 +360,12 @@ async function queueResponse(
   await db.execute(sql`
     INSERT INTO support_channel_outbox (
       channel, channel_address, source_channel_message_id, support_conversation_id,
-      body, reply_to_channel_message_id, purpose
+      body, reply_to_channel_message_id, purpose,
+      expected_securepay_identity_ref, expected_binding_authority_sequence, expected_binding_assertion_id
     ) VALUES (
       'WHATSAPP', ${job.channelAddress}, ${job.channelMessageDbId}::uuid, ${job.conversationId}::uuid,
-      ${clip(body, 4096)}, ${job.providerMessageId}, ${purpose}
+      ${clip(body, 4096)}, ${job.providerMessageId}, ${purpose},
+      ${job.securepayIdentityRef}, ${job.bindingAuthoritySequence}, ${job.bindingAssertionId}
     )
     ON CONFLICT (source_channel_message_id, purpose) DO NOTHING
   `);
@@ -362,7 +424,7 @@ async function resolveCaseFromContext(supportCase: SupportCaseRef, sourceRef: st
   });
 }
 
-async function markChannelMessage(id: string, status: "TRIAGED" | "HUMAN_QUEUED"): Promise<void> {
+async function markChannelMessage(id: string, status: "TRIAGED" | "HUMAN_QUEUED" | "STALE_BINDING"): Promise<void> {
   await db.execute(sql`UPDATE support_channel_messages SET processing_status = ${status}, processed_at = now() WHERE id = ${id}::uuid`);
 }
 
@@ -450,7 +512,7 @@ function clip(value: string, max: number): string {
 }
 
 function rows<T>(result: unknown): T[] {
-  return ((result as { rows?: T[] }).rows ?? []);
+  return ((result as { rows?: T[] }).rows ?? [];
 }
 
 async function mapWithConcurrency<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
