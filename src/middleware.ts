@@ -15,6 +15,11 @@ import {
 const PUBLIC_API_PATHS = ["/api/auth/login", "/api/auth/logout", "/api/health"];
 const SYSTEM_API_PATHS = ["/api/product-events"];
 const SECUREPAY_AUTH_API_PREFIX = "/api/securepay-auth/";
+const SECUREPAY_CALLER_API_PREFIXES = [
+  "/api/community/",
+  "/api/market-network/",
+  "/api/readiness/",
+];
 
 function isCommunityPath(pathname: string): boolean {
   return (
@@ -46,6 +51,11 @@ export async function middleware(request: NextRequest) {
   const staffSession = staffToken ? await verifySessionToken(staffToken) : null;
   const securePayAccessToken = request.cookies.get(SECUREPAY_ACCESS_COOKIE)?.value;
   const securePayRefreshToken = request.cookies.get(SECUREPAY_REFRESH_COOKIE)?.value;
+
+  if (isApiRoute && SECUREPAY_CALLER_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
+    if (securePayAccessToken) return NextResponse.next();
+    return NextResponse.json({ error: "SECUREPAY_SESSION_REQUIRED" }, { status: 401 });
+  }
 
   if (isCommunityPath(pathname)) {
     if (staffSession || securePayAccessToken) return NextResponse.next();
