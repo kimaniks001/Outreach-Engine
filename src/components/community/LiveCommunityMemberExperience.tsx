@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { LiveCommunitySnapshot } from "@/lib/community/live-snapshot";
 import { communityPrinciples } from "@/lib/community/foundation";
+import { CommunityMembershipActions } from "./CommunityMembershipActions";
+import { CommunityPublishForm } from "./CommunityPublishForm";
 
 export function LiveCommunityMemberExperience({
   memberName,
@@ -92,7 +94,17 @@ export function LiveCommunityMemberExperience({
                     {community.memberCount} members · {community.membershipPolicy === "OPEN" ? "Open membership" : "Approval required"}
                   </p>
                 </div>
-                <span className="text-xs text-ink-faint">{feed.length} visible post{feed.length === 1 ? "" : "s"}</span>
+                <div className="flex flex-col items-start gap-3 sm:items-end">
+                  <span className="text-xs text-ink-faint">{feed.length} visible post{feed.length === 1 ? "" : "s"}</span>
+                  <CommunityMembershipActions
+                    communityId={community.id}
+                    membershipPolicy={community.membershipPolicy}
+                    membershipRole={membership?.role ?? null}
+                    joinRequestPending={snapshot.pendingJoinRequests.some(
+                      (request) => request.communityId === community.id && request.status === "PENDING"
+                    )}
+                  />
+                </div>
               </div>
 
               {community.rules ? (
@@ -101,6 +113,8 @@ export function LiveCommunityMemberExperience({
                   <p className="mt-2 text-xs leading-5 text-ink-faint">{community.rules}</p>
                 </details>
               ) : null}
+
+              {membership ? <CommunityPublishForm communityId={community.id} /> : null}
 
               <div className="mt-5 space-y-3">
                 {feed.length === 0 ? (
@@ -129,9 +143,9 @@ export function LiveCommunityMemberExperience({
       </section>
 
       <section className="rounded-xl border border-brand/20 bg-brand/5 p-5">
-        <p className="text-sm font-semibold text-ink">The richer social layer is still being connected.</p>
+        <p className="text-sm font-semibold text-ink">Community membership and publishing are connected.</p>
         <p className="mt-2 text-xs leading-5 text-ink-muted">
-          Stories, reactions, voice/video moments, LIVE rooms, accolades and Circles are not part of MW-07 Community authority. They remain separate product work rather than being falsely represented as live backend features.
+          Join, leave and deliberate feed publishing now use MW-07 Community authority. Stories, reactions, voice/video moments, LIVE rooms, accolades and Circles are not part of that authority and remain separate product work rather than being falsely represented as live backend features.
         </p>
         <div className="mt-4 flex flex-wrap gap-4">
           <Link href="/circles" className="text-sm font-medium text-brand hover:underline">Explore the Circles prototype →</Link>
